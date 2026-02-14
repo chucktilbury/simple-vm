@@ -13,9 +13,9 @@ VM data types.
 
 * Address. A ``pointer`` of whatever format is defined by the operating system. An address can refer to a static memory or an allocated memory. If ``free`` is applied to a static address, it fails silently. All addresses reference data.
 * Number. A number is a native ``double`` number.
-* Index. An index is an ``unsigned long`` that is used to index a buffer.
+* Index. An index is an ``signed int`` that is used to index a buffer.
 * Buffer. This is an array of ``unsigned char`` bytes. Defining a buffer in the assembler refers to an assembler address. Note that all buffers are aligned on a 64 bit boundary and are a multiple of the size of an address, which is 8 under 64 bit Linux. 
-* Label. The is an ``unsigned long`` that references the instruction buffer. 
+* Label. The is an ``unsigned long`` that references the instruction buffer. There is no notion of a relative address.
 
 There is no strict data type checking in the assembler or in the VM. The VM operates on registers and whatever is in the register is assumed to be what the instruction is operating on. A register in the VM is the same size as a ``long integer``, which is 8 bytes (64 bits on x86_64). Any of the data types will fit into that. 
 
@@ -40,11 +40,12 @@ A ``REG`` always references an internal register. There are 32 internal register
 * ``R1``
 
 ### INDEX
-Is always an unsigned integer. Indexes are always used as if it is an index into an array of 64 bit entities, but the types of those entities is never checked. Note that the assembler will replace the name of a label or buffer with the correct index.
+Is always a signed integer. Indexes are always used as if it is an index into an array of 64 bit entities, but the types of those entities is never checked. Note that the assembler will replace the name of a label or buffer with the correct index.
 
 * ``REG``
 * ``0`` -- Zero is always taken to be an INDEX
 * ``0x123``
+* ``-12``
 * ``1234``
     * Index arithmetic is supported.
         * ``REG+123``
@@ -80,7 +81,7 @@ Used as arguments to the math functions.
 * ``NUM``
 
 ### MODE4
-Used as arguments to the math functions.
+Used as arguments to the flow instructions.
 
 * ``REG``
 * ``REG[INDEX]``
@@ -93,6 +94,7 @@ Used as arguments to the math functions.
 * **``PUSH MODE1``** -- Push the value to the top of the stack and increment the stack pointer.
 
 * **``POP``** -- Pop one or more items off of the stack.
+    * **``POP``** -- Pop a single item off of the stack into nothing and decrement the stack register.
     * **``POP REG``** -- Copy the value at the top of the stack to the operand and decrement the stack register.
     * **``POP INDEX``** -- Pop the literal INDEX number items off of the stack into nothing. Used to free locals allocated in a code block. If INDEX is 0 then this is the same as a NOP.
 
@@ -101,26 +103,39 @@ Used as arguments to the math functions.
 * **``ADD/SUB/MUL/DIV/MOD``** -- Arithmetic operations.
     * **``ADD MODE3,MODE3,MODE2``** -- Perform the operation on the two operands and place the result in the last argument.
 
-* **``CALL``** -- Unconditionally call the LABEL given by the first argument.
-    * **``CALL MODE4,MODE4``** --  Allocate stack space given by the second argument. When the call happens, the current address is pushed on the stack. The second argument is intended to account for the arity of the function all and adjusts the stack pointer such that PUSH does not clobber function parameters or local variables.
-    * **``CALL MODE4``** -- Push the return value on the stack, but assume that the stack pointer will be handled explicitly to accommodate function variables and locals.
+* **``CALL INDEX``** -- Unconditionally call the literal LABEL. Push the return value on the stack and then set the instruction pointer to the address given.
 
-* **``JMP MODE4``** -- Unconditionally jump to the LABEL. 
+* **``JMP INDEX``** -- Unconditionally jump to the literal LABEL. 
 
 * **``RET``** -- Unconditionally return from a function call. 
-    * **``RET INDEX``** -- First POP the INDEX number of values into nothing and then POP the top of stack into the instruction pointer causing an unconditional JMP. Note that the RET instruction pops the return address every time, so the number that is given by the literal INDEX does not include that. The number will be equal to the number of function parameters. (it's arity)
+    * **``RET INDEX``** -- First POP the literal INDEX number of values into nothing and then POP the top of stack into the instruction pointer causing an unconditional JMP. Note that the RET instruction pops the return address every time, so the number that is given by the literal INDEX does not include that. The number will be equal to the number of function parameters. (it's arity)
     * **``RET``** -- POP the top of the stack directly into the instruction pointer without accounting for any arity number.
 
-* **``CLT/CGT/CLTE/CGTE/CEQ/CNEQ``** -- Conditionally call based on the result of comparing the two registers. See the CALL instruction above.
-    * **``CLT MODE1,MODE1,MODE4,INDEX``**
-    * **``CGTE MODE1,MODE1,MODE4``**
+* **``LT MODE1,MODE1``** -- If the left operand is LESS THAN the right operand, then set the TRUE flag. Else clear it.
 
-* **``JLT/JGT/JLTE/JGTE/JEQ/JNEQ``** -- Conditionally jump based on the result of comparing the two registers. See the JMP instruction above.
-    * **``JGT MODE1,MODE1,MODE4``**
+* **``GT MODE1,MODE1``** -- If the left operand is GREATER THAN the right operand then set the TRUE flag. Else clear it.
 
-* **``RLT/RGT/RLTE/RGTE/REQ/RNEQ``** -- Conditionally return from a function call. 
-    * **``REQ MODE1,MODE1,INDEX``** -- First POP the INDEX number of values into nothing and then POP the top of stack into the instruction pointer causing an unconditional JMP.
-    * **``RGTE MODE1,MODE1``** -- POP the top of the stack directly into the instruction pointer without accounting for any arity number.
+* **``LTE MODE1,MODE1``** -- If the left operand is LESS THAN the right operand OR if they are EQUAL then set the TRUE flag. Otherwise, clear it.
+
+* **``GTE MODE1,MODE1``** -- If the left operand is GREATER THAN the right operand OR if they are EQUAL then set the TRUE flag. Otherwise, clear it.
+
+* **``EQ MODE1,MODE1``** -- If the left operand is EQUAL TO the right operand then set the TRUE flag. Otherwise, clear it.
+
+* **``NEQ MODE1,MODE1``** -- If the left operand is NOT EQUAL TO the right operand then set the TRUE flag. Otherwise, clear it.
+
+* **``SETF``** -- Set the TRUE flag unconditionally.
+
+* **``CLRF``** -- Clear the TRUE flag unconditionally.
+
+* **``CALLT/CALLF``** -- Conditionally call based on the TRUE flag.
+    * **``CALLT INDEX``** -- Call the literal LABEL given by the index if the TRUE flag is set.
+
+* **``JMPT/JMPF``** -- Conditionally jump based on the TRUE flag.
+    * **``JMPF INDEX``** -- Jump to the literal label if the TRUE flag is clear.
+
+* **``RETT/RETF``** -- Conditionally return from a function call. 
+    * **``RETT INDEX``** -- If the TRUE flag is set, first POP the INDEX number of values into nothing and then POP the top of stack into the instruction pointer causing an unconditional JMP.
+    * **``RETF``** -- If the TRUE flag is clear then POP the top of the stack directly into the instruction pointer without accounting for any arity number.
 
 * **``EXIT``** -- Return to the operating system.
     * **``EXIT INDEX``** -- With a literal exit code.
@@ -168,7 +183,7 @@ The assembler is very simple and free-form. It implements a simple symbol table 
 
 * **Code Blocks** -- A code block is surrounded by **``{}``** characters. There is no restriction on nesting. The purpose of blocks syntactically is to let the assembler know to switch the storage mode. Instructions that appear outside of a code block create a syntax error, but anonymous code blocks are allowed.
 
-* **Symbols** -- Assembler symbols follow the same general rules that C does. There is no difference between symbols that define data or that define labels in the code. All symbols must have a unique definition. Symbols must be defined before they are referenced.   
+* **Symbols** -- Assembler symbols follow the same general rules that C does. There is no difference in form between symbols that define data or that define labels in the code. All symbols defined in a global scope must be globally unique and must have a unique definition. Symbols defined in a code block only need to be unique to that code block. Symbols must be defined before they are referenced.
     * Here is a regular expression for a symbol: **``[a-zA-Z_][0-9a-zA-Z_]*``**.
 
 * **Index Literals** -- An index literal is the same as an unsigned long in C. Integer arithmetic are supported.
