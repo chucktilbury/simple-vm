@@ -5,7 +5,7 @@
 #include <errno.h>
 
 #include "cmdline.h"
-#include "trace.h"
+#include "common.h"
 
 extern FILE* yyin; // would be defined in a FLEX scanner.
 

@@ -161,22 +161,3 @@ const char* find_file(const char* fname, const char* ext) {
         RETURN(found);
 }
 
-/**
- * @brief Get the base file name object
- *
- * @return const char*
- */
-const char* get_base_file_name(void) {
-
-    return base_file_name;
-}
-
-/**
- * @brief Set the base file name object
- *
- * @param fname
- */
-void set_base_file_name(const char* fname) {
-
-    base_file_name = _COPY_STRING(fname);
-}

@@ -157,6 +157,16 @@ string_t* strip_space(string_t* buf) {
     return buf;
 }
 
+// strip white space from the ends and a quote character
+string_t* strip_ends(string_t* buf) {
+
+    strip_space(buf);
+    buf->buffer[strlen(buf->buffer)-1] = 0;
+    memmove(&buf->buffer[0], &buf->buffer[1], strlen(buf->buffer));
+
+    return buf;
+}
+
 string_t* upcase(string_t* buf) {
 
     for(int i = 0; buf->buffer[i] != '\0'; i++)

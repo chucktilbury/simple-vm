@@ -44,12 +44,13 @@ function dbg {
         echo "error: executable name is required"
     elif [ $# -eq 1 ]; then
         echo "$1"
-        kdbg $1
+        seergdb $1
     elif [ $# -gt 1 ]; then
         args=("$@")
         name=${args[0]}
         unset args[0]
-        kdbg -a "${args[*]}" $name 2> /dev/null &
+        #seergdb -a "${args[*]}" $name 2> /dev/null &
+        seergdb "${args[*]}"
     fi
 }
 

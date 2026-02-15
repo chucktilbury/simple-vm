@@ -27,6 +27,7 @@ void emit_string(FILE* fp, string_t* ptr);
 void emit_string_fmt(FILE* fp, const char* fmt, ...);
 
 string_t* strip_char(string_t* buf, int ch);
+string_t* strip_ends(string_t* buf);
 string_t* upcase(string_t* buf);
 string_t* downcase(string_t* buf);
 string_t* strip_space(string_t* buf);
