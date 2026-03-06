@@ -24,8 +24,9 @@ ADD_FLEX_BISON_DEPENDENCY(SCANNER PARSER)
 add_executable(${PROJECT_NAME}
     ${BISON_PARSER_OUTPUTS}
     ${FLEX_SCANNER_OUTPUTS}
-    ast.c
-    tokens.c
+    symbols.c
+    code_buffer.c
+    data_buffer.c
     file_io.c
     main.c
 )

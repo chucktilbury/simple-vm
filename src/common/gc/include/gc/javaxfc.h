@@ -19,7 +19,7 @@
 #define GC_JAVAXFC_H
 
 #ifndef GC_H
-#  include "gc.h"
+#include "gc.h"
 #endif
 
 #ifdef __cplusplus
@@ -50,9 +50,9 @@ GC_API void GC_CALL GC_finalize_all(void);
 /* resumed with the very first call to GC_resume_thread).             */
 /* Acquires the allocator lock.  Thread should be registered in GC.   */
 /* Unimplemented on some platforms.  Not recommended for general use. */
-#  ifndef GC_SUSPEND_THREAD_ID
-#    define GC_SUSPEND_THREAD_ID void *
-#  endif
+#ifndef GC_SUSPEND_THREAD_ID
+#define GC_SUSPEND_THREAD_ID void*
+#endif
 GC_API void GC_CALL GC_suspend_thread(GC_SUSPEND_THREAD_ID);
 GC_API void GC_CALL GC_resume_thread(GC_SUSPEND_THREAD_ID);
 

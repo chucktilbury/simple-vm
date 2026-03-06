@@ -1,7 +1,5 @@
 %{
 
-#include "ast.h"
-#include "tokens.h"
 #include "parser.h"
 #include "file_io.h"
 #include "common.h"
@@ -31,8 +29,6 @@ int prev_lineno;
 %%
 
 "include"           { return INCLUDE; }
-"func"|"function"   { return FUNC; }
-"data"              { return DATA; }
 "mov"|"move"        { return MOV; }
 "push"              { return PUSH; }
 "pop"               { return POP; }
@@ -61,39 +57,9 @@ int prev_lineno;
 "retf"              { return RETF; }
 "exit"              { return EXIT; }
 "nop"               { return NOP; }
-"pri"               { return PRI; }
-"prn"               { return PRN; }
-"prs"               { return PRS; }
-"prf"               { return PRF; }
-"inp"               { return INP; }
-"openr"             { return OPENR; }
-"openw"             { return OPENW; }
-"close"             { return CLOSE; }
-"read"              { return READ; }
-"write"             { return WRITE; }
-"alloc"             { return ALLOC; }
-"free"              { return FREE; }
-"dump"              { return DUMP; }
-"sin"               { return SIN; }
-"cos"               { return COS; }
-"tan"               { return TAN; }
-"asin"              { return ASIN; }
-"atan"              { return ATAN; }
-"acos"              { return ACOS; }
-"sinh"              { return SINH; }
-"cosh"              { return COSH; }
-"tanh"              { return TANH; }
-"exp"               { return EXP; }
-"log"               { return LOG; }
-"log10"             { return LOG10; }
-"log2"              { return LOG2; }
-"sqrt"              { return SQRT; }
-"cbrt"              { return CBRT; }
-"ceil"              { return CEIL; }
-"floor"             { return FLOOR; }
-"round"             { return ROUND; }
-"abs"               { return ABS; }
-"pow"               { return POW; }
+"extr"|"extern"     { return EXTR; }
+"const"|"constant"  { return CONST; }
+
 "r1"|"r01"          { return R01; }
 "r2"|"r02"          { return R02; }
 "r3"|"r03"          { return R03; }
@@ -126,12 +92,16 @@ int prev_lineno;
 "r30"               { return R30; }
 "r31"               { return R31; }
 "r32"               { return R32; }
+"sp"                { return SP; }
 
 "[" { return '['; }
 "]" { return ']'; }
 
 "(" { return '('; }
 ")" { return ')'; }
+
+":" { return ':'; }
+"=" { return '='; }
 
 "{" { return '{'; }
 "}" { return '}'; }
@@ -157,12 +127,7 @@ int prev_lineno;
 }
 
 [a-z_][a-z0-9_]* {
-    if(strbuf == NULL)
-        strbuf = create_string(NULL);
-    else
-        clear_string(strbuf);
-    append_string(strbuf, yytext);
-    yylval.strg = strbuf;
+    yylval.strg = create_string(yytext);
     return NAME;
 }
 
@@ -200,7 +165,7 @@ int prev_lineno;
 <DQUOTE>[^\\\n\"]+ { append_string(strbuf, yytext); }
 
 <DQUOTE>\" {
-    yylval.strg = strbuf;
+    yylval.strg = copy_string(strbuf);
     BEGIN(INITIAL);
     return QSTRG;
 }
@@ -225,7 +190,7 @@ int prev_lineno;
 <SQUOTE>[^\\\n\']+ { append_string(strbuf, yytext); }
 
 <SQUOTE>\' {
-    yylval.strg = strbuf;
+    yylval.strg = copy_string(strbuf);
     BEGIN(INITIAL);
     return QSTRG;
 }
@@ -254,7 +219,7 @@ int prev_lineno;
         destroy_string(ptr->name);
         yy_delete_buffer(ptr->buffer);
         pop_file_buffer();
-        _FREE(ptr);
+        _FREE(ptr); // using GC, this is a NOOP
         ptr = get_file_buffer();
         if(ptr)
             yy_switch_to_buffer(ptr->buffer);

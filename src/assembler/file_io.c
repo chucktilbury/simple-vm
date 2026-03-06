@@ -32,9 +32,6 @@ void open_file(const char* name, const char* ext) {
 
     ENTER;
     file_t* ptr = _ALLOC_TYPE(file_t);
-    LOCAL_VERBOSITY(1);
-    TRACE("trace verbosity: %d", peek_trace_verbosity());
-    TRACE("local verbosity: %d", local_verbosity);
 
     const char* fn = find_file(name, ext);
     yyin = fopen(fn, "r");
@@ -50,9 +47,6 @@ void open_file(const char* name, const char* ext) {
     yy_switch_to_buffer(ptr->buffer);
     ptr->next = NULL;
 
-    // if(file_stack != NULL)
-    //     ptr->next = file_stack;
-    // file_stack = ptr;
     push_file_buffer(ptr);
 
     TRACE("open file: %s", fn);
@@ -63,6 +57,10 @@ void open_file(const char* name, const char* ext) {
  * @brief Pop the current file off of the stack and destroy it.
  *
  *
+
+This function is moved to the <<EOF>> rule in the scanner definition because the call to the
+macro yyterminate() must be inline.
+
 int close_file(void) {
 
     ENTER;
@@ -165,4 +163,3 @@ const char* get_base_file_name(string_t* str) {
     else
         return str->buffer;
 }
-

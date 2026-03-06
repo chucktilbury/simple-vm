@@ -4,8 +4,9 @@
 #include <string.h>
 #include <errno.h>
 
-#include "tokens.h"
-#include "ast.h"
+#include "symbols.h"
+#include "code_buffer.h"
+#include "data_buffer.h"
 #include "file_io.h"
 #include "common.h"
 
@@ -15,20 +16,22 @@ extern int yylineno;
 extern FILE *yyin, *yyout;
 
 int errors = 0;
+unsigned long data_counter = 0;
+unsigned long code_counter = 0;
+pointer_list_t* data_ptrs;
 
 %}
 
 // support the typedefs in the %union.
 %code requires {
-#include "ast.h"
-#include "tokens.h"
+#include "symbols.h"
 #include "pointer_list.h"
 }
 
 // this goes at the bottom of the generated header file.
 %code provides {
 const char* token_to_str(int);
-void init_parser(void);
+void run_parser(void);
 extern int errors;
 }
 
@@ -38,18 +41,19 @@ extern int errors;
     double fval;
 };
 
-%token INCLUDE FUNC DATA
+%token INCLUDE DATA EXTRN
 %token PUSH MOV POP CPY ADD SUB MUL DIV MOD CALL JMP RET LT GT LTE GTE
 %token EQ NEQ STF CTF CALLT CALLF JMPT JMPF RETT RETF EXIT NOP
-%token PRI PRN PRS PRF INP OPENR OPENW CLOSE READ WRITE ALLOC FREE DUMP
-%token SIN COS TAN ASIN ATAN ACOS SINH COSH TANH EXP
-%token LOG LOG10 LOG2 SQRT CBRT CEIL FLOOR ROUND ABS POW
+
 %token R01 R02 R03 R04 R05 R06 R07 R08 R09 R10 R11 R12 R13 R14 R15 R16
 %token R17 R18 R19 R20 R21 R22 R23 R24 R25 R26 R27 R28 R29 R30 R31 R32
+%token SP
 
 %token <strg> QSTRG NAME
 %token <ival> INDEX
 %token <fval> NUMBER
+
+%type <ival> register
 
 %define parse.lac full
 %define parse.error detailed
@@ -61,15 +65,11 @@ extern int errors;
 %%
 
 module
-    : module_item {}
-    | module module_item {}
-    ;
-
-module_item
-    : include
-    | function_def
-    | var_def
-    | code_block
+    : instruction_list {
+            TRACE("module_item.instruction_list");
+//             printf("trace verbosity: %d\n", peek_trace_verbosity());
+//             printf("local verbosity: %d\n", local_verbosity);
+        }
     ;
 
 include
@@ -79,186 +79,302 @@ include
         }
     ;
 
+var_constant_list
+    : var_constant {
+            TRACE("CREATE var_constant_list");
+
+        }
+    | var_constant_list ',' var_constant {
+            TRACE("ADD var_constant_list");
+        }
+    ;
+
+var_constant
+    : INDEX {
+        }
+    | NUMBER {
+        }
+    | QSTRG {
+        }
+    ;
+
 var_def
-    : DATA NAME
+    : NAME {
+            TRACE("var_def one slot: %s", raw_string($1));
+            add_symbol($1, SYM_CODE, 1, data_counter++);
+        }
+    | NAME '[' INDEX ']' {
+            TRACE("var_def %lu slots: %s", $3, raw_string($1));
+            add_symbol($1, SYM_CODE, $3, data_counter+=$3);
+        }
+    | NAME '=' var_constant {
+            TRACE("var_def with var_constant: %s", raw_string($1));
+            add_symbol($1, SYM_CODE, 1, data_counter++);
+            // save the initializer to the slot
+        }
+    | NAME '=' '{' var_constant_list '}' {
+            TRACE("var_def with var_constant_list: %s", raw_string($1));
+            //add_symbol($1, SYM_CODE, 1, data_counter++);
+            // save the initializers to the list
+        }
     ;
 
-code_block
-    : '{' code_block_item_list '}'
-    ;
-
-param_list_item
-    : NAME
-    | INDEX
-    | NUMBER
-    ;
-
-param_list
-    : param_list_item
-    | param_list ',' param_list_item
-    ;
-
-func_params
-    : '(' ')'
-    | '(' param_list ')'
-    ;
-
-function_def
-    : FUNC NAME func_params code_block
-    ;
-
-code_block_item_list
-    : code_block_item
-    | code_block_item_list code_block_item
-    ;
-
-code_block_item
-    : var_def
-    | code_block
-    | instruction
+instruction_list
+    : instruction {
+            TRACE("CREATE instruction_list");
+        }
+    | instruction_list instruction {
+            TRACE("ADD instruction_list");
+        }
     ;
 
 instruction
-    : assembler_instruction
-    | assembler_function
+    : assembler_instruction {
+            TRACE("instruction.assembler_instruction");
+        }
+    | var_def {
+            TRACE("instruction.var_def");
+        }
+    | NAME ':' {
+            TRACE("instruction.NAME: %s", raw_string($1));
+        }
+    | include {
+            TRACE("module_item.include");
+        }
     ;
 
 register
-    : R01   {}
-    | R02   {}
-    | R03   {}
-    | R04   {}
-    | R05   {}
-    | R06   {}
-    | R07   {}
-    | R08   {}
-    | R09   {}
-    | R10   {}
-    | R11   {}
-    | R12   {}
-    | R13   {}
-    | R14   {}
-    | R15   {}
-    | R16   {}
-    | R17   {}
-    | R18   {}
-    | R19   {}
-    | R20   {}
-    | R21   {}
-    | R22   {}
-    | R23   {}
-    | R24   {}
-    | R25   {}
-    | R26   {}
-    | R27   {}
-    | R28   {}
-    | R29   {}
-    | R30   {}
-    | R31   {}
-    | R32   {}
+    : R01 {
+            TRACE("register.R01");
+            $$ = 0;
+        }
+    | R02 {
+            TRACE("register.R02");
+            $$ = 1;
+        }
+    | R03 {
+            TRACE("register.R02");
+            $$ = 2;
+        }
+    | R04 {
+            TRACE("register.R04");
+            $$ = 3;
+        }
+    | R05 {
+            TRACE("register.R05");
+            $$ = 4;
+        }
+    | R06 {
+            TRACE("register.R06");
+            $$ = 5;
+        }
+    | R07 {
+            TRACE("register.R07");
+            $$ = 6;
+        }
+    | R08 {
+            TRACE("register.R08");
+            $$ = 7;
+        }
+    | R09 {
+            TRACE("register.R09");
+            $$ = 8;
+        }
+    | R10 {
+            TRACE("register.R10");
+            $$ = 9;
+        }
+    | R11 {
+            TRACE("register.R11");
+            $$ = 10;
+        }
+    | R12 {
+            TRACE("register.R12");
+            $$ = 11;
+        }
+    | R13 {
+            TRACE("register.R13");
+            $$ = 12;
+        }
+    | R14 {
+            TRACE("register.R14");
+            $$ = 13;
+        }
+    | R15 {
+            TRACE("register.R15");
+            $$ = 14;
+        }
+    | R16 {
+            TRACE("register.R16");
+            $$ = 15;
+        }
+    | R17 {
+            TRACE("register.R17");
+            $$ = 16;
+        }
+    | R18 {
+            TRACE("register.R18");
+            $$ = 17;
+        }
+    | R19 {
+            TRACE("register.R19");
+            $$ = 18;
+        }
+    | R20 {
+            TRACE("register.R20");
+            $$ = 19;
+        }
+    | R21 {
+            TRACE("register.R21");
+            $$ = 20;
+        }
+    | R22 {
+            TRACE("register.R22");
+            $$ = 21;
+        }
+    | R23 {
+            TRACE("register.R23");
+            $$ = 22;
+        }
+    | R24 {
+            TRACE("register.R24");
+            $$ = 23;
+        }
+    | R25 {
+            TRACE("register.R25");
+            $$ = 24;
+        }
+    | R26 {
+            TRACE("register.R26");
+            $$ = 25;
+        }
+    | R27 {
+            TRACE("register.R27");
+            $$ = 26;
+        }
+    | R28 {
+            TRACE("register.R28");
+            $$ = 27;
+        }
+    | R29 {
+            TRACE("register.R29");
+            $$ = 28;
+        }
+    | R30 {
+            TRACE("register.R30");
+            $$ = 29;
+        }
+    | R31 {
+            TRACE("register.R31");
+            $$ = 30;
+        }
+    | R32 {
+            TRACE("register.R32");
+            $$ = 31;
+        }
+    | SP {
+            TRACE("register.SP");
+            $$ = 32;
+        }
     ;
 
 index_item
-    : INDEX
-    | register
+    : INDEX {
+            TRACE("index_item.INDEX: %lu", $1);
+        }
+    | register {
+            TRACE("index_item.register: %lu", $1);
+        }
     ;
 
 index
-    : '[' index_item ']'
-    | '[' index_item '+' index_item ']'
-    | '[' index_item '-' index_item ']'
+    : '[' index_item ']' {
+            TRACE("index");
+        }
+    | '[' index_item '+' index_item ']' {
+            TRACE("index add");
+        }
+    | '[' index_item '-' index_item ']' {
+            TRACE("index subtract");
+        }
     ;
 
 mode1
-    : register {}
-    | register index
+    : register {
+            TRACE("mode1.register");
+        }
+    | register index {
+            TRACE("mode1.register_index");
+        }
+    | NAME {
+            TRACE("mode1.NAME: %s", raw_string($1));
+        }
     ;
 
 mode2
-    : mode1 {}
-    | NUMBER
-    | INDEX
+    : mode1 {
+            TRACE("mode2.mode1");
+        }
+    | NUMBER {
+            TRACE("mode2.NUMBER: %f", $1);
+        }
+    | INDEX {
+            TRACE("mode2.INDEX: %lu", $1);
+        }
     ;
 
 mode3
-    : mode1 {}
-    | NUMBER
+    : mode1 {
+            TRACE("mode3.mode1");
+        }
+    | NUMBER {
+            TRACE("mode3.NUMBER: %f", $1);
+        }
     ;
 
 mode4
-    : mode1 {}
-    | INDEX
+    : mode1 {
+            TRACE("mode4.mode1");
+        }
+    | INDEX {
+            TRACE("mode4.INDEX: %f", $1);
+        }
     ;
 
 assembler_instruction
-    : MOV mode2 ',' mode1  {}
-    | PUSH mode2 {}
-    | POP INDEX {}
-    | CPY mode2 ',' mode1 ',' INDEX {}
-    | ADD mode2 ',' mode2 ',' mode1 {}
-    | SUB mode2 ',' mode2 ',' mode1 {}
-    | MUL mode2 ',' mode2 ',' mode1 {}
-    | DIV mode2 ',' mode2 ',' mode1 {}
-    | MOD mode2 ',' mode2 ',' mode1 {}
-    | CALL mode4 {}
-    | CALLT mode4 {}
-    | CALLF mode4 {}
-    | JMP mode4 {}
-    | JMPT mode4 {}
-    | JMPF mode4 {}
-    | RET {}
-    | RET INDEX {}
-    | RETT  {}
-    | RETT INDEX {}
-    | RETF  {}
-    | RETF INDEX {}
-    | LT mode2 ',' mode2 {}
-    | GT mode2 ',' mode2 {}
-    | LTE mode2 ',' mode2 {}
-    | GTE mode2 ',' mode2 {}
-    | EQ mode2 ',' mode2 {}
-    | NEQ mode2 ',' mode2 {}
-    | STF {}
-    | CTF {}
-    | EXIT {}
-    | EXIT INDEX {}
-    | NOP {}
-    ;
-
-assembler_function
-    : PRI register {}
-    | PRN register {}
-    | PRS register {}
-    | PRF register ',' register ',' INDEX {}
-    | INP register {}
-    | OPENR register ',' register {}
-    | OPENW register ',' register {}
-    | CLOSE register {}
-    | READ register ',' register ',' INDEX {}
-    | WRITE register ',' register ',' INDEX {}
-    | ALLOC register ',' INDEX {}
-    | FREE register {}
-    | DUMP {}
-    | SIN mode3 ',' mode1 {}
-    | COS mode3 ',' mode1 {}
-    | TAN mode3 ',' mode1 {}
-    | ASIN mode3 ',' mode1 {}
-    | ACOS mode3 ',' mode1 {}
-    | ATAN mode3 ',' mode1 {}
-    | SINH mode3 ',' mode1 {}
-    | COSH mode3 ',' mode1 {}
-    | TANH mode3 ',' mode1 {}
-    | EXP mode3 ',' mode1 {}
-    | LOG mode3 ',' mode1 {}
-    | LOG10 mode3 ',' mode1 {}
-    | LOG2 mode3 ',' mode1 {}
-    | SQRT mode3 ',' mode1 {}
-    | CBRT mode3 ',' mode1 {}
-    | CEIL mode3 ',' mode1 {}
-    | FLOOR mode3 ',' mode1 {}
-    | ROUND mode3 ',' mode1 {}
-    | ABS mode3 ',' mode1 {}
-    | POW mode3 ',' mode3 ',' mode1 {}
+    : MOV mode2 ',' mode1  { TRACE("MOV"); }
+    | PUSH mode2 { TRACE("PUSH"); }
+    | POP INDEX { TRACE("POP"); }
+    | CPY mode2 ',' mode1 ',' INDEX { TRACE("CPY"); }
+    | ADD mode2 ',' mode2 ',' mode1 { TRACE("ADD"); }
+    | SUB mode2 ',' mode2 ',' mode1 { TRACE("SUB"); }
+    | MUL mode2 ',' mode2 ',' mode1 { TRACE("MUL"); }
+    | DIV mode2 ',' mode2 ',' mode1 { TRACE("DIV"); }
+    | MOD mode2 ',' mode2 ',' mode1 { TRACE("MOD"); }
+    | CALL mode4 { TRACE("CALL"); }
+    | CALLT mode4 { TRACE("CALLT"); }
+    | CALLF mode4 { TRACE("CALLF"); }
+    | JMP mode4 { TRACE("JMP"); }
+    | JMPT mode4 { TRACE("JMPT"); }
+    | JMPF mode4 { TRACE("JMPF"); }
+    | RET { TRACE("RET"); }
+    | RET INDEX { TRACE("RET INDEX"); }
+    | RETT  { TRACE("RETT "); }
+    | RETT INDEX { TRACE("RETT INDEX"); }
+    | RETF  { TRACE("RETF "); }
+    | RETF INDEX { TRACE("RETF INDEX"); }
+    | LT mode2 ',' mode2 { TRACE("LT"); }
+    | GT mode2 ',' mode2 { TRACE("GT"); }
+    | LTE mode2 ',' mode2 { TRACE("LTE"); }
+    | GTE mode2 ',' mode2 { TRACE("GTE"); }
+    | EQ mode2 ',' mode2 { TRACE("EQ"); }
+    | NEQ mode2 ',' mode2 { TRACE("NEQ"); }
+    | STF { TRACE("STF"); }
+    | CTF { TRACE("CTF"); }
+    | EXIT { TRACE("EXIT"); }
+    | EXIT INDEX { TRACE("EXIT INDEX"); }
+    | NOP { TRACE("NOP"); }
+    | EXTR { TRACE("EXTR"); }
     ;
 
 %%
@@ -278,7 +394,7 @@ const char* token_to_str(int tok) {
     return yysymbol_name(YYTRANSLATE(tok));
 }
 
-void init_parser(void) {
+void run_parser(void) {
 
     if(in_cmd_list("dump", "parser"))
         LOCAL_VERBOSITY(0);
@@ -287,18 +403,12 @@ void init_parser(void) {
 
     TRACE_HEADER;
 
-    /*
-    const char* fname = raw_string(get_cmd_opt("files"));
-    if(fname != NULL) {
-        yyin = fopen(fname, "r");
-        if(yyin == NULL) {
-            fprintf(stderr, "cannot open input file \"%s\": %s\n", fname, strerror(errno));
-            cmdline_help();
-        }
-    }
-    else
-        FATAL("internal error in %s: command line failed", __func__);
-    */
+    create_code_buffer();
+    create_data_buffer();
+
     const char* fname = raw_string(get_cmd_opt("files"));
     open_file(fname, ".asm");
+
+    yyparse();
+
 }

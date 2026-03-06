@@ -14,7 +14,6 @@
 
 #include "trace.h"
 
-static const char* base_file_name = NULL;
 static string_list_t* common_env = NULL;
 static char buffer[_POSIX_PATH_MAX]; // returning a pointer to this
 
@@ -160,4 +159,3 @@ const char* find_file(const char* fname, const char* ext) {
     else
         RETURN(found);
 }
-

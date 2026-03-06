@@ -161,7 +161,7 @@ string_t* strip_space(string_t* buf) {
 string_t* strip_ends(string_t* buf) {
 
     strip_space(buf);
-    buf->buffer[strlen(buf->buffer)-1] = 0;
+    buf->buffer[strlen(buf->buffer) - 1] = 0;
     memmove(&buf->buffer[0], &buf->buffer[1], strlen(buf->buffer));
 
     return buf;

@@ -30,7 +30,7 @@ typedef struct _file_t_ {
 } file_t;
 
 void open_file(const char* name, const char* ext);
-//void close_file(void);
+// void close_file(void);
 int get_char(void);
 int get_line_no(void);
 int get_col_no(void);

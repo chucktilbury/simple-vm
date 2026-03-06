@@ -26,7 +26,7 @@
 #define GC_SPECIFIC_H
 
 #if !defined(GC_THREAD_LOCAL_ALLOC_H)
-#  error specific.h should be included from thread_local_alloc.h
+#error specific.h should be included from thread_local_alloc.h
 #endif
 
 #include <errno.h>
@@ -49,12 +49,12 @@ EXTERN_C_BEGIN
 /* Thread-local storage is not guaranteed to be scanned by GC.        */
 /* We hide values stored in "specific" entries for a test purpose.    */
 typedef GC_hidden_pointer ts_entry_value_t;
-#  define TS_HIDE_VALUE(p) GC_HIDE_NZ_POINTER(p)
-#  define TS_REVEAL_PTR(p) GC_REVEAL_NZ_POINTER(p)
+#define TS_HIDE_VALUE(p) GC_HIDE_NZ_POINTER(p)
+#define TS_REVEAL_PTR(p) GC_REVEAL_NZ_POINTER(p)
 #else
-typedef void *ts_entry_value_t;
-#  define TS_HIDE_VALUE(p) (p)
-#  define TS_REVEAL_PTR(p) (p)
+typedef void* ts_entry_value_t;
+#define TS_HIDE_VALUE(p) (p)
+#define TS_REVEAL_PTR(p) (p)
 #endif
 
 /* An entry describing a thread-specific value for a given thread.      */
@@ -64,10 +64,10 @@ typedef void *ts_entry_value_t;
 /* value.  This invariant must be preserved at ALL times, since         */
 /* asynchronous reads are allowed.                                      */
 typedef struct thread_specific_entry {
-  volatile AO_t qtid; /* quick thread id, only for cache */
-  ts_entry_value_t value;
-  struct thread_specific_entry *next;
-  pthread_t thread;
+    volatile AO_t qtid; /* quick thread id, only for cache */
+    ts_entry_value_t value;
+    struct thread_specific_entry* next;
+    pthread_t thread;
 } tse;
 
 /* We represent each thread-specific datum as two tables.  The first is */
@@ -88,45 +88,43 @@ typedef struct thread_specific_entry {
 #define INVALID_THREADID ((pthread_t)0)
 
 typedef struct thread_specific_data {
-  tse *volatile cache[TS_CACHE_SIZE]; /* a faster index to the hash table */
-  tse *hash[TS_HASH_SIZE];
-  pthread_mutex_t lock;
+    tse* volatile cache[TS_CACHE_SIZE]; /* a faster index to the hash table */
+    tse* hash[TS_HASH_SIZE];
+    pthread_mutex_t lock;
 } tsd;
 
-typedef tsd *GC_key_t;
+typedef tsd* GC_key_t;
 
 #define GC_key_create(key, d) GC_key_create_inner(key)
-GC_INNER int GC_key_create_inner(tsd **key_ptr);
-GC_INNER int GC_setspecific(tsd *key, void *value);
+GC_INNER int GC_key_create_inner(tsd** key_ptr);
+GC_INNER int GC_setspecific(tsd* key, void* value);
 #define GC_remove_specific(key) \
-  GC_remove_specific_after_fork(key, pthread_self())
-GC_INNER void GC_remove_specific_after_fork(tsd *key, pthread_t t);
+    GC_remove_specific_after_fork(key, pthread_self())
+GC_INNER void GC_remove_specific_after_fork(tsd* key, pthread_t t);
 
 #ifdef CAN_HANDLE_FORK
 /* Update thread-specific data for the survived thread of the child     */
 /* process.  Should be called once after removing thread-specific data  */
 /* for other threads.                                                   */
-GC_INNER void GC_update_specific_after_fork(tsd *key);
+GC_INNER void GC_update_specific_after_fork(tsd* key);
 #endif
 
 /* An internal version of getspecific that assumes a cache miss.        */
-GC_INNER void *GC_slow_getspecific(tsd *key, size_t qtid,
-                                   tse *volatile *entry_ptr);
+GC_INNER void* GC_slow_getspecific(tsd* key, size_t qtid, tse* volatile* entry_ptr);
 
-GC_INLINE void *
-GC_getspecific(tsd *key)
-{
-  size_t qtid = ts_quick_thread_id();
-  tse *volatile *entry_ptr = &key->cache[TS_CACHE_HASH(qtid)];
-  const tse *entry = *entry_ptr; /* must be loaded only once */
+GC_INLINE void*
+        GC_getspecific(tsd* key) {
+    size_t qtid = ts_quick_thread_id();
+    tse* volatile* entry_ptr = &key->cache[TS_CACHE_HASH(qtid)];
+    const tse* entry = *entry_ptr; /* must be loaded only once */
 
-  GC_ASSERT(qtid != INVALID_QTID);
-  if (EXPECT(entry->qtid == qtid, TRUE)) {
-    GC_ASSERT(entry->thread == pthread_self());
-    return TS_REVEAL_PTR(entry->value);
-  }
+    GC_ASSERT(qtid != INVALID_QTID);
+    if(EXPECT(entry->qtid == qtid, TRUE)) {
+        GC_ASSERT(entry->thread == pthread_self());
+        return TS_REVEAL_PTR(entry->value);
+    }
 
-  return GC_slow_getspecific(key, qtid, entry_ptr);
+    return GC_slow_getspecific(key, qtid, entry_ptr);
 }
 
 EXTERN_C_END

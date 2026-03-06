@@ -36,7 +36,7 @@
 #define GC_BACKPTR_H
 
 #ifndef GC_H
-#  include "gc.h"
+#include "gc.h"
 #endif
 
 #ifdef __cplusplus
@@ -44,13 +44,13 @@ extern "C" {
 #endif
 
 typedef enum {
-  GC_UNREFERENCED,   /* No reference info available.         */
-  GC_NO_SPACE,       /* Dest not allocated with debug alloc. */
-  GC_REFD_FROM_ROOT, /* Referenced directly by root *base_p. */
-  GC_REFD_FROM_REG,  /* Referenced from a register, i.e.     */
-                     /* a root without an address.           */
-  GC_REFD_FROM_HEAP, /* Referenced from another heap obj.    */
-  GC_FINALIZER_REFD  /* Finalizable and hence accessible.    */
+    GC_UNREFERENCED,   /* No reference info available.         */
+    GC_NO_SPACE,       /* Dest not allocated with debug alloc. */
+    GC_REFD_FROM_ROOT, /* Referenced directly by root *base_p. */
+    GC_REFD_FROM_REG,  /* Referenced from a register, i.e.     */
+                       /* a root without an address.           */
+    GC_REFD_FROM_HEAP, /* Referenced from another heap obj.    */
+    GC_FINALIZER_REFD  /* Finalizable and hence accessible.    */
 } GC_ref_kind;
 
 /* Store information about the object referencing dest in *base_p   */
@@ -64,19 +64,19 @@ typedef enum {
 /* The allocator lock is not acquired by design (despite of the     */
 /* possibility of a race); anyway the function should not be used   */
 /* in production code.                                              */
-GC_API GC_ref_kind GC_CALL GC_get_back_ptr_info(void * /* dest */,
-                                                void ** /* base_p */,
-                                                size_t * /* offset_p */)
-    GC_ATTR_NONNULL(1);
+GC_API GC_ref_kind GC_CALL GC_get_back_ptr_info(void* /* dest */,
+                                                void** /* base_p */,
+                                                size_t* /* offset_p */)
+        GC_ATTR_NONNULL(1);
 
 /* Generate a random heap address.  The resulting address is    */
 /* in the heap, but not necessarily inside a valid object.      */
 /* The caller should hold the allocator lock.                   */
-GC_API void *GC_CALL GC_generate_random_heap_address(void);
+GC_API void* GC_CALL GC_generate_random_heap_address(void);
 
 /* Generate a random address inside a valid marked heap object. */
 /* The caller should hold the allocator lock.                   */
-GC_API void *GC_CALL GC_generate_random_valid_address(void);
+GC_API void* GC_CALL GC_generate_random_valid_address(void);
 
 /* Force a garbage collection and generate a backtrace from a   */
 /* random heap address.                                         */
@@ -87,7 +87,7 @@ GC_API void GC_CALL GC_generate_random_backtrace(void);
 /* Print a backtrace from a specific address.  Used by the      */
 /* above.  The client should call GC_gcollect() immediately     */
 /* before invocation.                                           */
-GC_API void GC_CALL GC_print_backtrace(void *) GC_ATTR_NONNULL(1);
+GC_API void GC_CALL GC_print_backtrace(void*) GC_ATTR_NONNULL(1);
 
 #ifdef __cplusplus
 } /* extern "C" */
