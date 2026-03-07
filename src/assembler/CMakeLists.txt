@@ -25,8 +25,6 @@ add_executable(${PROJECT_NAME}
     ${BISON_PARSER_OUTPUTS}
     ${FLEX_SCANNER_OUTPUTS}
     symbols.c
-    code_buffer.c
-    data_buffer.c
     file_io.c
     main.c
 )
@@ -35,4 +33,5 @@ target_link_libraries(${PROJECT_NAME}
     gc
     cord
     common
+    vm_common
 )

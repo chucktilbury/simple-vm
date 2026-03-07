@@ -5,8 +5,7 @@
 #include <errno.h>
 
 #include "symbols.h"
-#include "code_buffer.h"
-#include "data_buffer.h"
+#include "vm_common.h"
 #include "file_io.h"
 #include "common.h"
 
@@ -37,23 +36,33 @@ extern int errors;
 
 %union {
     string_t* strg;
-    unsigned long ival;
-    double fval;
+    int ival;
+    unsigned int uval;
+    float fval;
 };
 
-%token INCLUDE DATA EXTRN
-%token PUSH MOV POP CPY ADD SUB MUL DIV MOD CALL JMP RET LT GT LTE GTE
-%token EQ NEQ STF CTF CALLT CALLF JMPT JMPF RETT RETF EXIT NOP
+%token INCLUDE DATA EXTERN
+%token MOV PUSH POP CPY
+%token LT GT LTE GTE EQ NEQ SETF CLRF
+%token CALL JMP RET
+%token CALLT JMPT RETT
+%token CALLF JMPF RETF
+%token ADD SUB MUL DIV MOD
+%token ADDI SUBI MULI DIVI MODI
+%token ADDU SUBU MULU DIVU MODU
+%token ADDF SUBF MULF DIVF MODF
+%token EXIT ABORT NOP
 
 %token R01 R02 R03 R04 R05 R06 R07 R08 R09 R10 R11 R12 R13 R14 R15 R16
 %token R17 R18 R19 R20 R21 R22 R23 R24 R25 R26 R27 R28 R29 R30 R31 R32
 %token SP
 
 %token <strg> QSTRG NAME
-%token <ival> INDEX
-%token <fval> NUMBER
+%token <ival> INTEGER
+%token <uval> UNSIGNED
+%token <fval> FLOAT
 
-%type <ival> register
+%type <ival> register index_constant index_expr
 
 %define parse.lac full
 %define parse.error detailed
@@ -62,11 +71,15 @@ extern int errors;
     //%output "parser.c"
     //%defines
 
+%left '+' '-'
+%left '*' '/' '%'
+
 %%
 
 module
     : instruction_list {
             TRACE("module_item.instruction_list");
+
 //             printf("trace verbosity: %d\n", peek_trace_verbosity());
 //             printf("local verbosity: %d\n", local_verbosity);
         }
@@ -81,50 +94,62 @@ include
 
 var_constant_list
     : var_constant {
-            TRACE("CREATE var_constant_list");
+            TRACE("create var_constant_list");
 
         }
     | var_constant_list ',' var_constant {
-            TRACE("ADD var_constant_list");
+            TRACE("add to var_constant_list");
+        }
+    ;
+
+index_constant
+    : INTEGER {
+            { TRACE("index_constant.INTEGER: %d", $1); }
+        }
+    | UNSIGNED {
+            { TRACE("index_constant.UNSIGNED: 0x%04X", $1); }
         }
     ;
 
 var_constant
-    : INDEX {
+    : index_constant {
+            { TRACE("var_constant.index_constant"); }
         }
-    | NUMBER {
+    | FLOAT {
+            { TRACE("var_constant.FLOAT: %f", $1); }
         }
     | QSTRG {
+            { TRACE("var_constant.QSTRG: %s", raw_string($1)); }
         }
     ;
 
 var_def
-    : NAME {
-            TRACE("var_def one slot: %s", raw_string($1));
-            add_symbol($1, SYM_CODE, 1, data_counter++);
+    : DATA NAME {
+            TRACE("var_def one slot: %s", raw_string($2));
+            add_symbol($2, SYM_CODE, 1, data_counter++);
         }
-    | NAME '[' INDEX ']' {
-            TRACE("var_def %lu slots: %s", $3, raw_string($1));
-            add_symbol($1, SYM_CODE, $3, data_counter+=$3);
+    | DATA NAME '[' index_constant ']' {
+            TRACE("var_def %lu slots: %s", $4, raw_string($2));
+            add_symbol($2, SYM_CODE, $4, data_counter+=$4);
         }
-    | NAME '=' var_constant {
-            TRACE("var_def with var_constant: %s", raw_string($1));
-            add_symbol($1, SYM_CODE, 1, data_counter++);
+    | DATA NAME '=' var_constant {
+            TRACE("var_def with var_constant: %s", raw_string($2));
+            add_symbol($2, SYM_CODE, 1, data_counter++);
             // save the initializer to the slot
         }
-    | NAME '=' '{' var_constant_list '}' {
-            TRACE("var_def with var_constant_list: %s", raw_string($1));
-            //add_symbol($1, SYM_CODE, 1, data_counter++);
+    | DATA NAME '=' '{' var_constant_list '}' {
+            TRACE("var_def with var_constant_list: %s", raw_string($2));
+            add_symbol($2, SYM_CODE, 1, data_counter++);
             // save the initializers to the list
         }
     ;
 
 instruction_list
     : instruction {
-            TRACE("CREATE instruction_list");
+            TRACE("create instruction_list");
         }
     | instruction_list instruction {
-            TRACE("ADD instruction_list");
+            TRACE("add to instruction_list");
         }
     ;
 
@@ -278,24 +303,49 @@ register
         }
     ;
 
-index_item
-    : INDEX {
-            TRACE("index_item.INDEX: %lu", $1);
+index_expr
+    : index_constant {
+            $$ = $1;
+            TRACE("index_expr.index_constant: %d", $$);
         }
-    | register {
-            TRACE("index_item.register: %lu", $1);
+    | index_expr '+' index_expr {
+            $$ = $1 + $3;
+            TRACE("index_expr.+ %d", $$);
+        }
+    | index_expr '-' index_expr {
+            $$ = $1 - $3;
+            TRACE("index_expr.- %d", $$);
+        }
+    | index_expr '*' index_expr {
+            $$ = $1 * $3;
+            TRACE("index_expr.* %d", $$);
+        }
+    | index_expr '/' index_expr {
+            if($1 == 0)
+                yyerror("divide by zero in index expression");
+            else
+                $$ = $1 / $3;
+            TRACE("index_expr./ %d", $$);
+        }
+    | index_expr '%' index_expr {
+            if($1 == 0)
+                yyerror("modulo by zero in index expression");
+            else
+                $$ = $1 % $3;
+            TRACE("index_expr.%% %d", $$);
+        }
+    | '(' index_expr ')' {
+            $$ = $2;
+            TRACE("(index_expr): %d", $$);
         }
     ;
 
 index
-    : '[' index_item ']' {
-            TRACE("index");
+    : '[' index_expr ']' {
+            TRACE("index: %d", $2);
         }
-    | '[' index_item '+' index_item ']' {
-            TRACE("index add");
-        }
-    | '[' index_item '-' index_item ']' {
-            TRACE("index subtract");
+    | '[' ']' {
+            TRACE("blank index");
         }
     ;
 
@@ -315,66 +365,79 @@ mode2
     : mode1 {
             TRACE("mode2.mode1");
         }
-    | NUMBER {
-            TRACE("mode2.NUMBER: %f", $1);
-        }
-    | INDEX {
-            TRACE("mode2.INDEX: %lu", $1);
+    | index_constant {
+            TRACE("mode2.index_constant: 0x%04X", (unsigned)$1);
         }
     ;
 
 mode3
-    : mode1 {
-            TRACE("mode3.mode1");
+    : mode2 {
+            TRACE("mode3.mode2");
         }
-    | NUMBER {
-            TRACE("mode3.NUMBER: %f", $1);
+    | FLOAT {
+            TRACE("mode3.FLOAT: %f", $1);
         }
     ;
 
-mode4
-    : mode1 {
-            TRACE("mode4.mode1");
-        }
-    | INDEX {
-            TRACE("mode4.INDEX: %f", $1);
-        }
+arith_instr
+    : ADD { TRACE("arith_instr.ADD"); }
+    | ADDI { TRACE("arith_instr.ADDI"); }
+    | ADDU { TRACE("arith_instr.ADDU"); }
+    | ADDF { TRACE("arith_instr.ADDF"); }
+    | SUB { TRACE("arith_instr.SUB"); }
+    | SUBI { TRACE("arith_instr.SUBI"); }
+    | SUBU { TRACE("arith_instr.SUBU"); }
+    | SUBF { TRACE("arith_instr.SUBF"); }
+    | MUL { TRACE("arith_instr.MUL"); }
+    | MULI { TRACE("arith_instr.MULI"); }
+    | MULU { TRACE("arith_instr.MULU"); }
+    | MULF { TRACE("arith_instr.MULF"); }
+    | DIV { TRACE("arith_instr.DIV"); }
+    | DIVI { TRACE("arith_instr.DIVI"); }
+    | DIVU { TRACE("arith_instr.DIVU"); }
+    | DIVF { TRACE("arith_instr.DIVF"); }
+    | MOD { TRACE("arith_instr.MOD"); }
+    | MODI { TRACE("arith_instr.MODI"); }
+    | MODU { TRACE("arith_instr.MODU"); }
+    | MODF { TRACE("arith_instr.MODF"); }
+    ;
+
+ctrl_instr
+    : CALL { TRACE("ctrl_instr.CALL"); }
+    | CALLT { TRACE("ctrl_instr.CALLT"); }
+    | CALLF { TRACE("ctrl_instr.CALLF"); }
+    | JMP { TRACE("ctrl_instr.JMP"); }
+    | JMPT { TRACE("ctrl_instr.JMPT"); }
+    | JMPF { TRACE("ctrl_instr.JMPF"); }
+    | RET { TRACE("ctrl_instr.RET"); }
+    | RETT { TRACE("ctrl_instr.RETT"); }
+    | RETF { TRACE("ctrl_instr.RETF"); }
+    ;
+
+comp_instr
+    : LT { TRACE("comp_instr.LT"); }
+    | GT { TRACE("comp_instr.GT"); }
+    | LTE { TRACE("comp_instr.LTE"); }
+    | GTE { TRACE("comp_instr.GTE"); }
+    | EQ { TRACE("comp_instr.EQ"); }
+    | NEQ { TRACE("comp_instr.NEQ"); }
     ;
 
 assembler_instruction
-    : MOV mode2 ',' mode1  { TRACE("MOV"); }
-    | PUSH mode2 { TRACE("PUSH"); }
-    | POP INDEX { TRACE("POP"); }
-    | CPY mode2 ',' mode1 ',' INDEX { TRACE("CPY"); }
-    | ADD mode2 ',' mode2 ',' mode1 { TRACE("ADD"); }
-    | SUB mode2 ',' mode2 ',' mode1 { TRACE("SUB"); }
-    | MUL mode2 ',' mode2 ',' mode1 { TRACE("MUL"); }
-    | DIV mode2 ',' mode2 ',' mode1 { TRACE("DIV"); }
-    | MOD mode2 ',' mode2 ',' mode1 { TRACE("MOD"); }
-    | CALL mode4 { TRACE("CALL"); }
-    | CALLT mode4 { TRACE("CALLT"); }
-    | CALLF mode4 { TRACE("CALLF"); }
-    | JMP mode4 { TRACE("JMP"); }
-    | JMPT mode4 { TRACE("JMPT"); }
-    | JMPF mode4 { TRACE("JMPF"); }
-    | RET { TRACE("RET"); }
-    | RET INDEX { TRACE("RET INDEX"); }
-    | RETT  { TRACE("RETT "); }
-    | RETT INDEX { TRACE("RETT INDEX"); }
-    | RETF  { TRACE("RETF "); }
-    | RETF INDEX { TRACE("RETF INDEX"); }
-    | LT mode2 ',' mode2 { TRACE("LT"); }
-    | GT mode2 ',' mode2 { TRACE("GT"); }
-    | LTE mode2 ',' mode2 { TRACE("LTE"); }
-    | GTE mode2 ',' mode2 { TRACE("GTE"); }
-    | EQ mode2 ',' mode2 { TRACE("EQ"); }
-    | NEQ mode2 ',' mode2 { TRACE("NEQ"); }
-    | STF { TRACE("STF"); }
-    | CTF { TRACE("CTF"); }
+    : MOV mode1 ',' mode3  { TRACE("MOV"); }
+    | PUSH mode3 { TRACE("PUSH"); }
+    | POP mode1 { TRACE("POP"); }
+    | CPY mode1 ',' register ',' index_constant { TRACE("CPY"); }
+    | arith_instr mode1 ',' register ',' register { TRACE("arith_instr mode1"); }
+    | ctrl_instr mode1 { TRACE("ctrl_instr mode1 "); }
+    | comp_instr mode2 ',' mode2 { TRACE("comp_instr mode2"); }
+    | SETF { TRACE("STF"); }
+    | CLRF { TRACE("CTF"); }
     | EXIT { TRACE("EXIT"); }
-    | EXIT INDEX { TRACE("EXIT INDEX"); }
+    | EXIT index_constant { TRACE("EXIT INDEX"); }
+    | ABORT { TRACE("ABORT"); }
     | NOP { TRACE("NOP"); }
-    | EXTR { TRACE("EXTR"); }
+    | EXTERN QSTRG { TRACE("EXTERN"); }
     ;
 
 %%

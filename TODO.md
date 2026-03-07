@@ -22,7 +22,7 @@
 
 **``Registers``**
 
-Registers are numbered from **``R1 to R32``**. Every register is exactly the same. The register **``SP``** is the stack counter. Any operation that accepts a normal register can also accept the stack counter. References to the stack counter always reference the contents of the stack, not the stack counter itself. The actual value of the stack counter is not accessible to any VM instruction. The instruction counter is not directly accessible to any VM instruction.
+Registers are labeled from **``R1 to R32``**. Every register is exactly the same. The register **``SP``** is the stack counter. Any operation that accepts a normal register can also accept the stack counter. The instruction counter is not directly accessible to any VM instruction.
 
 **``Data types``**
 
@@ -30,7 +30,7 @@ As stated before al items in the data store are unsigned ints, but the instructi
 
 * Signed ints are used for relative instruction indexes.
 
-* Floats are used for some arithmetic instructions.
+* Float are used for some arithmetic instructions.
 
 * Strings are treated as an array of unsigned bytes. These are not handled by any specific instruction but supported in the assembler for the sake of implementing external routines.
 
@@ -85,7 +85,7 @@ An instruction is a byte code that the VM performs an action upon. The fall into
     * ``data array_name = {10, 10, 10} // define an array of 3 slots, initialized to 10``
     * ``data string_name = "this is a string" // define an array of 4 slots, the last one being init to 0``
 
-* **``EXTERN``** -- Do a **``CALL``** to an external function that is pre-defined in the VM.
+* **``EXTERN``** -- Do a **``CALL``** to an external function (such as libc or some other library) that is pre-defined in the VM.
 
 ```
     mov r1,3 // arity of the call

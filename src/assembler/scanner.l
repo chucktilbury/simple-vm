@@ -28,37 +28,53 @@ int prev_lineno;
 
 %%
 
-"include"           { return INCLUDE; }
-"mov"|"move"        { return MOV; }
-"push"              { return PUSH; }
-"pop"               { return POP; }
-"cpy"|"copy"        { return CPY; }
-"add"               { return ADD; }
-"sub"               { return SUB; }
-"mul"               { return MUL; }
-"div"               { return DIV; }
-"mod"               { return MOD; }
-"call"              { return CALL; }
-"jmp"               { return JMP; }
-"ret"               { return RET; }
-"lt"                { return LT;}
-"gt"                { return GT;}
-"lte"               { return LTE; }
-"gte"               { return GTE; }
-"eq"                { return EQ; }
-"neq"               { return NEQ; }
-"stf"               { return STF; }
-"ctf"               { return CTF; }
-"callt"             { return CALLT; }
-"callf"             { return CALLF; }
-"jmpt"              { return JMPT; }
-"jmpf"              { return JMPF; }
-"rett"              { return RETT; }
-"retf"              { return RETF; }
-"exit"              { return EXIT; }
-"nop"               { return NOP; }
-"extr"|"extern"     { return EXTR; }
-"const"|"constant"  { return CONST; }
+"include"   { return INCLUDE; }
+"data"      { return DATA; }
+"extern"    { return EXTERN; }
+"mov"|"move" { return MOV; }
+"push"      { return PUSH; }
+"pop"       { return POP; }
+"cpy"|"copy" { return CPY; }
+"lt"        { return LT; }
+"gt"        { return GT; }
+"lte"       { return LTE; }
+"gte"       { return GTE; }
+"eq"        { return EQ; }
+"neq"       { return NEQ; }
+"setf"      { return SETF; }
+"clrf"      { return CLRF; }
+"call"      { return CALL; }
+"jmp"       { return JMP; }
+"ret"       { return RET; }
+"callt"     { return CALLT; }
+"jmpt"      { return JMPT; }
+"rett"      { return RETT; }
+"callf"     { return CALLF; }
+"jmpf"      { return JMPF; }
+"retf"      { return RETF; }
+"add"       { return ADD; }
+"sub"       { return SUB; }
+"mul"       { return MUL; }
+"div"       { return DIV; }
+"mod"       { return MOD; }
+"addi"      { return ADDI; }
+"subi"      { return SUBI; }
+"muli"      { return MULI; }
+"divi"      { return DIVI; }
+"modi"      { return MODI; }
+"addu"      { return ADDU; }
+"subu"      { return SUBU; }
+"mulu"      { return MULU; }
+"divu"      { return DIVU; }
+"modu"      { return MODU; }
+"addf"      { return ADDF; }
+"subf"      { return SUBF; }
+"mulf"      { return MULF; }
+"divf"      { return DIVF; }
+"modf"      { return MODF; }
+"exit"      { return EXIT; }
+"abort"     { return ABORT; }
+"nop"       { return NOP; }
 
 "r1"|"r01"          { return R01; }
 "r2"|"r02"          { return R02; }
@@ -108,22 +124,25 @@ int prev_lineno;
 
 "+" {return '+'; }
 "-" {return '-'; }
+"/" {return '/'; }
+"*" {return '*'; }
+"%" {return '%'; }
 
 "," { return ','; }
 
 (-?[1-9][0-9]*)|0 {
     yylval.ival = strtol(yytext, NULL, 10);
-    return INDEX;
+    return INTEGER;
 }
 
 0[xX][0-9a-fA-F]+ {
-    yylval.ival = strtol(yytext, NULL, 16);
-    return INDEX;
+    yylval.uval = (unsigned int)strtol(yytext, NULL, 16);
+    return UNSIGNED;
 }
 
 -?(0|[1-9][0-9]*)\.([0-9]*([eE][-+]?([1-9][0-9]*))?) {
-    yylval.fval = strtod(yytext, NULL);
-    return NUMBER;
+    yylval.fval = (float)strtod(yytext, NULL);
+    return FLOAT;
 }
 
 [a-z_][a-z0-9_]* {
