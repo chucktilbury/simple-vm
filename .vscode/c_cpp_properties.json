@@ -1,0 +1,17 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${default}",
+                "/home/chuck/Src/simple-vm/src/common",
+                "/home/chuck/Src/simple-vm/build/src/assembler",
+                "${workspaceFolder}/src/assembler"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/clang",
+            "cppStandard": "c++17"
+        }
+    ],
+    "version": 4
+}
