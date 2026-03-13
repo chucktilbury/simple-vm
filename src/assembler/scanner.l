@@ -31,6 +31,11 @@ int prev_lineno;
 "include"   { return INCLUDE; }
 "data"      { return DATA; }
 "extern"    { return EXTERN; }
+"int"       { return INT;}
+"uint"      { return UINT;}
+"float"     { return FLOAT;}
+"strg"      { return STRG;}
+
 "mov"|"move" { return MOV; }
 "push"      { return PUSH; }
 "pop"       { return POP; }
@@ -132,17 +137,17 @@ int prev_lineno;
 
 (-?[1-9][0-9]*)|0 {
     yylval.ival = strtol(yytext, NULL, 10);
-    return INTEGER;
+    return INT_LITERAL;
 }
 
 0[xX][0-9a-fA-F]+ {
     yylval.uval = (unsigned int)strtol(yytext, NULL, 16);
-    return UNSIGNED;
+    return UINT_LITERAL;
 }
 
 -?(0|[1-9][0-9]*)\.([0-9]*([eE][-+]?([1-9][0-9]*))?) {
     yylval.fval = (float)strtod(yytext, NULL);
-    return FLOAT;
+    return FLOAT_LITERAL;
 }
 
 [a-z_][a-z0-9_]* {
@@ -186,7 +191,7 @@ int prev_lineno;
 <DQUOTE>\" {
     yylval.strg = copy_string(strbuf);
     BEGIN(INITIAL);
-    return QSTRG;
+    return STRG_LITERAL;
 }
 
 \' {
@@ -211,7 +216,7 @@ int prev_lineno;
 <SQUOTE>\' {
     yylval.strg = copy_string(strbuf);
     BEGIN(INITIAL);
-    return QSTRG;
+    return STRG_LITERAL;
 }
 
 "//" { BEGIN(LCOMMENT); }

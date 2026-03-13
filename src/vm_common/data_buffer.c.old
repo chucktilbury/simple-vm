@@ -1,0 +1,218 @@
+
+#include <string.h>
+#include "common.h"
+
+//#define _TESTING_
+#include "data_buffer.h"
+
+#define TO_DATA(t, v) (*((unsigned int*)((t*)(&(v)))))
+
+static data_buffer_t* data = NULL;
+
+void create_data_buffer(void) {
+
+    if(data == NULL) {
+        data = _ALLOC_TYPE(data_buffer_t);
+        data->cap = 0x01 << 3;
+        data->len = 0;
+        data->data = _ALLOC_ARRAY(unsigned int, data->cap);
+    }
+}
+
+void destroy_data_buffer(void) {
+
+    if(data != NULL) {
+        _FREE(data->data);
+        _FREE(data);
+    }
+}
+
+int append_data_buffer(unsigned int val) {
+
+    ASSERT(data != NULL, "uninitialized data pointer");
+    if(data->len + 1 > data->cap) {
+        data->cap <<= 1;
+        data->data = _REALLOC_ARRAY(data->data, unsigned int, data->cap);
+    }
+
+    data->data[data->len] = val;
+    data->len++;
+
+    return data->len-1;
+}
+
+int add_unsigned_data(unsigned val) {
+
+    ASSERT(data != NULL, "uninitialized data pointer");
+    return append_data_buffer(val);
+}
+
+int add_int_data(int val) {
+
+    ASSERT(data != NULL, "uninitialized data pointer");
+    return append_data_buffer(TO_DATA(int, val));
+}
+
+int add_float_data(float val) {
+
+    ASSERT(data != NULL, "uninitialized data pointer");
+    return append_data_buffer(TO_DATA(float, val));
+}
+
+
+int add_string_data(const char* str) {
+
+    ASSERT(data != NULL, "uninitialized data pointer");
+    unsigned int *tmp = (unsigned int*)str;
+    int slen = strlen(str)+1;
+    int ilen = slen / sizeof(unsigned int);
+    if(ilen*sizeof(unsigned int) != slen)
+        ilen++;
+    int index = append_data_buffer(*tmp++);
+    for(int i = 1; i < ilen; i++)
+        append_data_buffer(*tmp++);
+
+    return index;
+}
+
+int get_data_buffer(int index) {
+
+    ASSERT(data != NULL, "uninitialized data pointer");
+    if(index >= 0 && index < data->len)
+        return data->data[index];
+    else
+        FATAL("invalid data buffer index: %d, %d", index, data->len);
+}
+
+int get_int_data(int index) {
+
+    ASSERT(data != NULL, "uninitialized data pointer");
+    return (int)get_data_buffer(index);
+}
+
+unsigned int get_unsigned_data(int index) {
+
+    ASSERT(data != NULL, "uninitialized data pointer");
+    return get_data_buffer(index);
+}
+
+float get_float_data(int index) {
+
+    ASSERT(data != NULL, "uninitialized data pointer");
+    unsigned int val = get_data_buffer(index);
+    return (float)*((float*)(&val));
+}
+
+char* get_string_data(int index) {
+
+    ASSERT(data != NULL, "uninitialized data pointer");
+    if(index >= 0 && index < data->len)
+        return (char*)&data->data[index];
+    else
+        FATAL("invalid data buffer index: %d, %d", index, data->len);
+}
+
+int push_data_buffer(unsigned int val) {
+
+    ASSERT(data != NULL, "uninitialized data pointer");
+    return append_data_buffer(val);
+}
+
+unsigned int pop_data_buffer(void) {
+
+    ASSERT(data != NULL, "uninitialized data pointer");
+    unsigned int tmp = 0xFF;
+    if(data->len > 0) {
+        tmp = data->data[data->len-1];
+        data->len--;
+    }
+    else
+        FATAL("stack under run");
+
+    return tmp;
+}
+
+unsigned int peek_data_buffer(int index) {
+
+    ASSERT(data != NULL, "uninitialized data pointer");
+    ASSERT(index <= 0, "data stack relative index references the top of the stack");
+
+    if(data->len + index > 0)
+        return data->data[index + data->len - 1];
+    else
+        FATAL("stack under run");
+
+    return 0xFF; // make the compiler happy
+}
+
+#ifdef _TESTING_
+/*
+    Build string from source directory. Requires that make has created libcommon.a.
+    clang -g -Wall -Wextra -Wpedantic -pedantic -I../common -L../../lib data_buffer.c -o t -lcommon -lgc -DUSE_ASSERTS
+*/
+#include <stdio.h>
+
+void dump(void) {
+    printf("len = %u, cap = %u\n", data->len, data->cap);
+}
+
+int main(void) {
+
+    create_data_buffer();
+
+    printf("push: %u (0x123)\n", push_data_buffer(0x123));
+    printf("push: %u (0x0000ABC0)\n", push_data_buffer(0x0000ABC0));
+    printf("push: %u (0xDEADBEEF)\n", push_data_buffer(0xDEADBEEF));
+    printf("push: %u (0x00)\n", push_data_buffer(0x00));
+    printf("push: %u (0x00001200)\n", push_data_buffer(0x00001200));
+    dump();
+
+    printf("peek (0): 0x%08X\n", peek_data_buffer(0));
+    printf("pop: 0x%08X\n", pop_data_buffer());
+    printf("pop: 0x%08X\n", pop_data_buffer());
+    printf("peek (0): 0x%08X\n", peek_data_buffer(0));
+    dump();
+
+    printf("push: %u (0x12345678)\n", push_data_buffer(0x12345678));
+    printf("push: %u (0x9ABCDEF0)\n", push_data_buffer(0x9ABCDEF0));
+    dump();
+
+    printf("peek (0): 0x%08X\n", peek_data_buffer(0));
+    printf("pop: 0x%08X\n", pop_data_buffer());
+    printf("pop: 0x%08X\n", pop_data_buffer());
+    printf("peek (0): 0x%08X\n", peek_data_buffer(0));
+    dump();
+
+    printf("peek (-1): 0x%08X\n", peek_data_buffer(-1));
+    printf("peek (-2): 0x%08X\n", peek_data_buffer(-2));
+    dump();
+
+    // abort the program
+    //printf("peek (2): 0x%08X\n", peek_data_buffer(2));
+
+    char* str = "1234abcdxyz";
+    int idx = add_string_data(str);
+    printf("add string: %d: %s\n", idx, str);
+    dump();
+    printf("peek (0): 0x%08X\n", peek_data_buffer(0));
+    printf("peek (-1): 0x%08X\n", peek_data_buffer(-1));
+    printf("peek (-2): 0x%08X\n", peek_data_buffer(-2));
+    printf("get string: %s\n", get_string_data(idx)); // read the input for the number
+    dump();
+
+    float num = 124.329123;
+    idx = add_float_data(num);
+    printf("adding float: %d: %f\n", idx, num);
+    printf("get float data: %f\n", get_float_data(idx));
+
+    num = 12432.23;
+    idx = add_float_data(num);
+    printf("adding float: %d: %f\n", idx, num);
+    printf("get float data: %f\n", get_float_data(idx));
+
+    destroy_data_buffer();
+    return 0;
+}
+
+#endif
+

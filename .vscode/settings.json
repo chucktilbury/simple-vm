@@ -42,6 +42,7 @@
         "SUBF",
         "SUBI",
         "SUBU",
+        "sval",
         "yycolno",
         "yyerror",
         "yyin",

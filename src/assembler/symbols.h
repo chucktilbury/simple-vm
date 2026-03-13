@@ -19,5 +19,6 @@ typedef struct {
 void create_symbol_table(void);
 void add_symbol(string_t* name, int type, int length, unsigned int index);
 symbol_t* get_symbol(string_t* name);
+void dump_sym_table(void);
 
 #endif /* _SYMBOLS_H_ */

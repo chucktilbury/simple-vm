@@ -15,9 +15,10 @@ extern int yylineno;
 extern FILE *yyin, *yyout;
 
 int errors = 0;
-unsigned long data_counter = 0;
+int data_index = 0;
+int data_count = 0;
 unsigned long code_counter = 0;
-pointer_list_t* data_ptrs;
+pointer_list_t* data_ptrs = NULL;
 
 %}
 
@@ -39,9 +40,11 @@ extern int errors;
     int ival;
     unsigned int uval;
     float fval;
+    data_item_t* data_item;
+    symbol_t* symbol;
 };
 
-%token INCLUDE DATA EXTERN
+%token INCLUDE DATA EXTERN INT UINT FLOAT STRG
 %token MOV PUSH POP CPY
 %token LT GT LTE GTE EQ NEQ SETF CLRF
 %token CALL JMP RET
@@ -57,12 +60,15 @@ extern int errors;
 %token R17 R18 R19 R20 R21 R22 R23 R24 R25 R26 R27 R28 R29 R30 R31 R32
 %token SP
 
-%token <strg> QSTRG NAME
-%token <ival> INTEGER
-%token <uval> UNSIGNED
-%token <fval> FLOAT
+%token <strg> STRG_LITERAL NAME
+%token <ival> INT_LITERAL
+%token <uval> UINT_LITERAL
+%token <fval> FLOAT_LITERAL
 
-%type <ival> register index_constant index_expr
+%type <ival> register index_expr
+%type <uval> arith_instr ctrl_instr comp_instr
+%type <data_item> var_constant index_constant
+%type <symbol> data_definition
 
 %define parse.lac full
 %define parse.error detailed
@@ -86,7 +92,7 @@ module
     ;
 
 include
-    : INCLUDE QSTRG {
+    : INCLUDE STRG_LITERAL {
             TRACE("include string: %s", raw_string($2));
             open_file(raw_string($2), ".asm");
         }
@@ -95,51 +101,85 @@ include
 var_constant_list
     : var_constant {
             TRACE("create var_constant_list");
-
+            if(data_ptrs == NULL)
+                data_ptrs = create_ptr_list();
+            append_ptr_list(data_ptrs, (void*)$1);
         }
     | var_constant_list ',' var_constant {
             TRACE("add to var_constant_list");
+            append_ptr_list(data_ptrs, (void*)$3);
         }
     ;
 
 index_constant
-    : INTEGER {
-            { TRACE("index_constant.INTEGER: %d", $1); }
+    : INT_LITERAL {
+            TRACE("index_constant.INTEGER: %d", $1);
+            $$ = create_ival_item(&$1);
         }
-    | UNSIGNED {
-            { TRACE("index_constant.UNSIGNED: 0x%04X", $1); }
+    | UINT_LITERAL {
+            TRACE("index_constant.UNSIGNED: 0x%04X", $1);
+            $$ = create_uval_item(&$1);
         }
     ;
 
 var_constant
     : index_constant {
-            { TRACE("var_constant.index_constant"); }
+            TRACE("var_constant.index_constant");
+            $$ = $1;
         }
-    | FLOAT {
-            { TRACE("var_constant.FLOAT: %f", $1); }
+    | FLOAT_LITERAL {
+            TRACE("var_constant.FLOAT: %f", $1);
+            $$ = create_fval_item(&$1);
+
         }
-    | QSTRG {
-            { TRACE("var_constant.QSTRG: %s", raw_string($1)); }
+    | STRG_LITERAL {
+            TRACE("var_constant.QSTRG: %s", raw_string($1));
+            $$ = create_sval_t_item($1);
+        }
+    ;
+
+data_definition
+    : DATA NAME {
+            TRACE("data_intro.-UINT- %s", raw_string($2));
+        }
+    | INT NAME {
+            TRACE("data_intro.INT: %s", raw_string($2));
+        }
+    | UINT NAME {
+            TRACE("data_intro.UINT: %s", raw_string($2));
+        }
+    | FLOAT NAME {
+            TRACE("data_intro.FLOAT: %s", raw_string($2));
+        }
+    | STRG NAME {
+            TRACE("data_intro.STRG: %s", raw_string($2));
         }
     ;
 
 var_def
     : DATA NAME {
+            // one uninitialized data element
             TRACE("var_def one slot: %s", raw_string($2));
-            add_symbol($2, SYM_CODE, 1, data_counter++);
+            add_symbol($2, SYM_DATA, 1, append_data_buffer(create_ival_item(NULL)));
         }
     | DATA NAME '[' index_constant ']' {
+            // several uninitialized data elements
             TRACE("var_def %lu slots: %s", $4, raw_string($2));
-            add_symbol($2, SYM_CODE, $4, data_counter+=$4);
+            data_index = append_data_buffer(0x00);
+            for(int i = 1; i < $4; i++)
+                append_data_buffer(0x00);
+            add_symbol($2, SYM_DATA, $4, data_index);
         }
     | DATA NAME '=' var_constant {
+            // one initialized data element
             TRACE("var_def with var_constant: %s", raw_string($2));
-            add_symbol($2, SYM_CODE, 1, data_counter++);
+            add_symbol($2, SYM_DATA, 1, data_index);
             // save the initializer to the slot
         }
     | DATA NAME '=' '{' var_constant_list '}' {
             TRACE("var_def with var_constant_list: %s", raw_string($2));
-            add_symbol($2, SYM_CODE, 1, data_counter++);
+            add_symbol($2, SYM_DATA, data_count, data_index);
+            data_count = 0;
             // save the initializers to the list
         }
     ;
@@ -171,135 +211,135 @@ instruction
 register
     : R01 {
             TRACE("register.R01");
-            $$ = 0;
+            $$ = REG_R01;
         }
     | R02 {
             TRACE("register.R02");
-            $$ = 1;
+            $$ = REG_R02;
         }
     | R03 {
             TRACE("register.R02");
-            $$ = 2;
+            $$ = REG_R03;
         }
     | R04 {
             TRACE("register.R04");
-            $$ = 3;
+            $$ = REG_R04;
         }
     | R05 {
             TRACE("register.R05");
-            $$ = 4;
+            $$ = REG_R05;
         }
     | R06 {
             TRACE("register.R06");
-            $$ = 5;
+            $$ = REG_R06;
         }
     | R07 {
             TRACE("register.R07");
-            $$ = 6;
+            $$ = REG_R07;
         }
     | R08 {
             TRACE("register.R08");
-            $$ = 7;
+            $$ = REG_R08;
         }
     | R09 {
             TRACE("register.R09");
-            $$ = 8;
+            $$ = REG_R09;
         }
     | R10 {
             TRACE("register.R10");
-            $$ = 9;
+            $$ = REG_R10;
         }
     | R11 {
             TRACE("register.R11");
-            $$ = 10;
+            $$ = REG_R11;
         }
     | R12 {
             TRACE("register.R12");
-            $$ = 11;
+            $$ = REG_R12;
         }
     | R13 {
             TRACE("register.R13");
-            $$ = 12;
+            $$ = REG_R13;
         }
     | R14 {
             TRACE("register.R14");
-            $$ = 13;
+            $$ = REG_R14;
         }
     | R15 {
             TRACE("register.R15");
-            $$ = 14;
+            $$ = REG_R15;
         }
     | R16 {
             TRACE("register.R16");
-            $$ = 15;
+            $$ = REG_R16;
         }
     | R17 {
             TRACE("register.R17");
-            $$ = 16;
+            $$ = REG_R17;
         }
     | R18 {
             TRACE("register.R18");
-            $$ = 17;
+            $$ = REG_R18;
         }
     | R19 {
             TRACE("register.R19");
-            $$ = 18;
+            $$ = REG_R19;
         }
     | R20 {
             TRACE("register.R20");
-            $$ = 19;
+            $$ = REG_R20;
         }
     | R21 {
             TRACE("register.R21");
-            $$ = 20;
+            $$ = REG_R21;
         }
     | R22 {
             TRACE("register.R22");
-            $$ = 21;
+            $$ = REG_R22;
         }
     | R23 {
             TRACE("register.R23");
-            $$ = 22;
+            $$ = REG_R23;
         }
     | R24 {
             TRACE("register.R24");
-            $$ = 23;
+            $$ = REG_R24;
         }
     | R25 {
             TRACE("register.R25");
-            $$ = 24;
+            $$ = REG_R25;
         }
     | R26 {
             TRACE("register.R26");
-            $$ = 25;
+            $$ = REG_R26;
         }
     | R27 {
             TRACE("register.R27");
-            $$ = 26;
+            $$ = REG_R27;
         }
     | R28 {
             TRACE("register.R28");
-            $$ = 27;
+            $$ = REG_R28;
         }
     | R29 {
             TRACE("register.R29");
-            $$ = 28;
+            $$ = REG_R29;
         }
     | R30 {
             TRACE("register.R30");
-            $$ = 29;
+            $$ = REG_R30;
         }
     | R31 {
             TRACE("register.R31");
-            $$ = 30;
+            $$ = REG_R31;
         }
     | R32 {
             TRACE("register.R32");
-            $$ = 31;
+            $$ = REG_R32;
         }
     | SP {
             TRACE("register.SP");
-            $$ = 32;
+            $$ = REG_SP;
         }
     ;
 
@@ -374,53 +414,158 @@ mode3
     : mode2 {
             TRACE("mode3.mode2");
         }
-    | FLOAT {
+    | FLOAT_LITERAL {
             TRACE("mode3.FLOAT: %f", $1);
         }
     ;
 
 arith_instr
-    : ADD { TRACE("arith_instr.ADD"); }
-    | ADDI { TRACE("arith_instr.ADDI"); }
-    | ADDU { TRACE("arith_instr.ADDU"); }
-    | ADDF { TRACE("arith_instr.ADDF"); }
-    | SUB { TRACE("arith_instr.SUB"); }
-    | SUBI { TRACE("arith_instr.SUBI"); }
-    | SUBU { TRACE("arith_instr.SUBU"); }
-    | SUBF { TRACE("arith_instr.SUBF"); }
-    | MUL { TRACE("arith_instr.MUL"); }
-    | MULI { TRACE("arith_instr.MULI"); }
-    | MULU { TRACE("arith_instr.MULU"); }
-    | MULF { TRACE("arith_instr.MULF"); }
-    | DIV { TRACE("arith_instr.DIV"); }
-    | DIVI { TRACE("arith_instr.DIVI"); }
-    | DIVU { TRACE("arith_instr.DIVU"); }
-    | DIVF { TRACE("arith_instr.DIVF"); }
-    | MOD { TRACE("arith_instr.MOD"); }
-    | MODI { TRACE("arith_instr.MODI"); }
-    | MODU { TRACE("arith_instr.MODU"); }
-    | MODF { TRACE("arith_instr.MODF"); }
+    : ADD {
+            TRACE("arith_instr.ADD");
+            $$ = INSTR_ADD;
+        }
+    | ADDI {
+            TRACE("arith_instr.ADDI");
+            $$ = INSTR_ADDI;
+        }
+    | ADDU {
+            TRACE("arith_instr.ADDU");
+            $$ = INSTR_ADDU;
+        }
+    | ADDF {
+            TRACE("arith_instr.ADDF");
+            $$ = INSTR_ADDF;
+        }
+    | SUB {
+            TRACE("arith_instr.SUB");
+            $$ = INSTR_SUB;
+        }
+    | SUBI {
+            TRACE("arith_instr.SUBI");
+            $$ = INSTR_SUBI;
+        }
+    | SUBU {
+            TRACE("arith_instr.SUBU");
+            $$ = INSTR_SUBU;
+        }
+    | SUBF {
+            TRACE("arith_instr.SUBF");
+            $$ = INSTR_SUBF;
+        }
+    | MUL {
+            TRACE("arith_instr.MUL");
+            $$ = INSTR_MUL;
+        }
+    | MULI {
+            TRACE("arith_instr.MULI");
+            $$ = INSTR_MULI;
+        }
+    | MULU {
+            TRACE("arith_instr.MULU");
+            $$ = INSTR_MULU;
+        }
+    | MULF {
+            TRACE("arith_instr.MULF");
+            $$ = INSTR_MULF;
+        }
+    | DIV {
+            TRACE("arith_instr.DIV");
+            $$ = INSTR_DIV;
+        }
+    | DIVI {
+            TRACE("arith_instr.DIVI");
+            $$ = INSTR_DIVI;
+        }
+    | DIVU {
+            TRACE("arith_instr.DIVU");
+            $$ = INSTR_DIVU;
+        }
+    | DIVF {
+            TRACE("arith_instr.DIVF");
+            $$ = INSTR_DIVF;
+        }
+    | MOD {
+            TRACE("arith_instr.MOD");
+            $$ = INSTR_MOD;
+        }
+    | MODI {
+            TRACE("arith_instr.MODI");
+            $$ = INSTR_MODI;
+        }
+    | MODU {
+            TRACE("arith_instr.MODU");
+            $$ = INSTR_MODU;
+        }
+    | MODF {
+            TRACE("arith_instr.MODF");
+            $$ = INSTR_MODF;
+        }
     ;
 
 ctrl_instr
-    : CALL { TRACE("ctrl_instr.CALL"); }
-    | CALLT { TRACE("ctrl_instr.CALLT"); }
-    | CALLF { TRACE("ctrl_instr.CALLF"); }
-    | JMP { TRACE("ctrl_instr.JMP"); }
-    | JMPT { TRACE("ctrl_instr.JMPT"); }
-    | JMPF { TRACE("ctrl_instr.JMPF"); }
-    | RET { TRACE("ctrl_instr.RET"); }
-    | RETT { TRACE("ctrl_instr.RETT"); }
-    | RETF { TRACE("ctrl_instr.RETF"); }
+    : CALL {
+            TRACE("ctrl_instr.CALL");
+            $$ = INSTR_CALL;
+        }
+    | CALLT {
+            TRACE("ctrl_instr.CALLT");
+            $$ = INSTR_CALLT;
+        }
+    | CALLF {
+            TRACE("ctrl_instr.CALLF");
+            $$ = INSTR_CALLF;
+        }
+    | JMP {
+            TRACE("ctrl_instr.JMP");
+            $$ = INSTR_JMP;
+        }
+    | JMPT {
+            TRACE("ctrl_instr.JMPT");
+            $$ = INSTR_JMPT;
+        }
+    | JMPF {
+            TRACE("ctrl_instr.JMPF");
+            $$ = INSTR_JMPF;
+        }
+    | RET {
+            TRACE("ctrl_instr.RET");
+            $$ = INSTR_RET;
+        }
+    | RETT {
+            TRACE("ctrl_instr.RETT");
+            $$ = INSTR_RETT;
+        }
+    | RETF {
+            TRACE("ctrl_instr.RETF");
+            $$ = INSTR_RETF;
+        }
     ;
 
 comp_instr
-    : LT { TRACE("comp_instr.LT"); }
-    | GT { TRACE("comp_instr.GT"); }
-    | LTE { TRACE("comp_instr.LTE"); }
-    | GTE { TRACE("comp_instr.GTE"); }
-    | EQ { TRACE("comp_instr.EQ"); }
-    | NEQ { TRACE("comp_instr.NEQ"); }
+    : LT {
+            TRACE("comp_instr.LT");
+            $$ = INSTR_LT;
+        }
+    | GT {
+            TRACE("comp_instr.GT");
+            $$ = INSTR_GT;
+        }
+    | LTE {
+            TRACE("comp_instr.LTE");
+            $$ = INSTR_LTE;
+        }
+    | GTE {
+            TRACE("comp_instr.GTE");
+            $$ = INSTR_GTE;
+        }
+    | EQ {
+            TRACE("comp_instr.EQ");
+            $$ = INSTR_EQ;
+        }
+    | NEQ {
+            TRACE("comp_instr.NEQ");
+            $$ = INSTR_NEQ;
+        }
     ;
 
 assembler_instruction
@@ -437,7 +582,7 @@ assembler_instruction
     | EXIT index_constant { TRACE("EXIT INDEX"); }
     | ABORT { TRACE("ABORT"); }
     | NOP { TRACE("NOP"); }
-    | EXTERN QSTRG { TRACE("EXTERN"); }
+    | EXTERN STRG_LITERAL { TRACE("EXTERN"); }
     ;
 
 %%
@@ -473,5 +618,8 @@ void run_parser(void) {
     open_file(fname, ".asm");
 
     yyparse();
+
+    dump_sym_table();
+    dump_data_buffer();
 
 }
