@@ -1,208 +1,113 @@
 # Simple VM
-This is a simple virtual machine implementation that includes a simple assembler for it. It's just for fun and not really intended for anything. I might hook up a small C or something at some point, depending on whether I am interested at the time.
+This is a simple Virtual Machine implementation with an assembler and a dumper. It is not intended for any real work. It is a toy and eventually I may port a small C compiler to it. **Funfun**.
 
-The VM is arranged like a processor with a stack, registers, load, store, compare, and arithmetic instructions. Provisions are also made for built in functions such as print and some file IO.
+## VM Architecture
 
-The assembler is a separate program that writes a binary file that is loaded by the VM. It supports symbols and an ``include`` directive. It outputs a single, fully linked, file that is loaded by the VM for execution.
+Simple register based virtual machine that closely resembles a simple microprocessor. The instruction set is minimal, but an interface is provided to connect arbitrary library routines to the VM itself. There is exactly one data type, which is a 64 bit signed integer. All registers and stack objects are of that type. They can be interpreted by library routines. When the VM loads the binary image of the program to run, first it allocates the registers. Then it loads the data store after that. The first entry in the data store has an index of 33. Then the VM initializes the stack after the data store. If there are 10 items in the data store, then the top of the stack will be ``33 + 10 + 1 = 44``.
 
-A disassembler is also implemented to aid debugging.
+There are 32 registers with a stack pointer that are all accessed in exactly the same way. Registers are numbered from 1 to 32 where R32 is an alias for the SP.
 
-The VM memory model is transparent to the program. It supports ``alloc`` and ``free``, which are ultimately implemented using the C standard library. Also the assembler supports static data.
+The stack is an array of signed 64 bit integers and the stack pointer is an index to the array. Things like function parameters and local variables are/can be stored on the stack and the return address for a ``CALL`` instruction is also stored there. The ``RET`` instruction pops the value at the top of the stack directly into the instruction pointer when it is encountered. The stack pointer value is directly accessible by some instructions, such as the ``MOV`` instruction, but not from others, such as ``ADD``. The value that the stack pointer points to is directly accessible as any other register. When the data store is loaded from disk, the top of the stack is set to the end of it to allow the stack and the data store to operate from a register. The stack grows up in value and there is no specific limit on it's size.
 
-VM data types.
+The memory store is an array of 64 bit signed integers. It is accessed using an index into that array, starting at index zero. All memory is read/write. There is no notion of read-only memory.
 
-* Address. A ``pointer`` of whatever format is defined by the operating system. An address can refer to a static memory or an allocated memory. If ``free`` is applied to a static address, it fails silently. All addresses reference data.
-* Number. A number is a native ``double`` number.
-* Index. An index is an ``signed int`` that is used to index a buffer.
-* Buffer. This is an array of ``unsigned char`` bytes. Defining a buffer in the assembler refers to an assembler address. Note that all buffers are aligned on a 64 bit boundary and are a multiple of the size of an address, which is 8 under 64 bit Linux.
-* Label. The is an ``unsigned long`` that references the instruction buffer. There is no notion of a relative address.
+The instruction store is an array of unsigned bytes and the instruction pointer is an index into the array. Invalid or unknown instructions raise an exception internally to the VM, publishes an error to ``stderr`` and aborts the VM. There is no way of directly accessing the instruction pointer or the value that the pointer references. Only flow control instructions such as ``CALL`` and ``RET`` can set the value. However those instructions can accept an indirect reference such as ``CALL R21[R0]``. In this example, the value in ``R21`` as added to the value in ``R0`` to find the absolute address to call to. All addresses given are absolute and no "relative" jumps are allowed.
 
-There is no strict data type checking in the assembler or in the VM. The VM operates on registers and whatever is in the register is assumed to be what the instruction is operating on. A register in the VM is the same size as a ``long integer``, which is 8 bytes (64 bits on x86_64). Any of the data types will fit into that.
+## Assembler
 
-The VM stack is push-up/pop-down and does not have a strict size limit. It is enlarged as required but is never de-allocated. All function calls use the stack for parameters and the return address of a function call is stored on the stack as well. Local data definitions are stored on the stack as well. The ``RET`` instruction accepts an ``INDEX`` that adjusts the stack to free a function call. After a function is entered, the stack is adjusted to accommodate what is on the stack. ``PUSH`` and ``POP`` instructions are permissible in a function definition.
+### Input File Layout
 
-Note that there is no way to directly access the program counter or the stack pointer.
+The assembler is a single-pass compiler that is as simple as possible. All symbols in the input must be fully defined before referencing. That having been said, data and code can be defined anywhere in the input and they are emitted separately as a single binary with the names stripped out. The names in the data and code are replaced with their indexes by the assembler. 
 
-All ``ADDRESS`` indirection is permissible. No checking is done for the wisdom of reading or writing with an address. See the instruction descriptions for using an index with an address.
+The assembler is designed to support the C preprocessor. All lines that begin with a ``#`` are ignored as comments. No attempt is made to track source code line numbers and whatnot. It is intended that the heavy use of the ``#include`` directive will be made and ``#define`` macros will be very useful. All comment formats that are supported by the preprocessor are supported in the input. The preprocessor is automatically run by the assembler and the assembler operates on the result as a temporary file.
 
-All variables defined outside of a function are defined in global initialized data. Code does not need to be defined inside of a function. All code that is defined outside of a function is executed in the order it is encountered. It is concatenated and stored at the beginning of the output binary it is entered when the VM begins execution. Code and data cannot be mingled, however, a ``LABEL`` value can be stored in global data.
+Most whitespace in the input is completely ignored. 
 
-The instruction buffer is written and read as an array of bytes. Those bytes are arranged according to the endianess of the host.
+### Assembler Instructions
 
-## VM Address Modes
-An address mode is the way a register is referenced and it's encoding in the instruction steam. All instructions have the same format. In general executing an instruction does not destroy the operands.
+Assembler instructions are as simple as possible and designed for efficiency. Most instructions only accept registers. The most complicated instruction is the ``MOV`` instruction and it's designed to handle things like indirect addressing. In general, any register is acceptable for any instruction, including the stack pointer, ``SP``. However, the ``SP`` register refers to the stack item pointed to by the stack pointer. To access the actual value of the stack pointer itself, one must use the ``MOV`` which accesses all registers by its own semantic rules. (see below)
 
-### REG
-A ``REG`` always references an internal register. There are 32 internal registers numbered 1 through 32. The address register and the stack pointer are excluded from all register access unless otherwise indicated.
+In general, the first operand of an instruction is the destination and the other operands are in expression order.
 
-* ``R12``
-* ``R32``
-* ``R1``
+* **``sub dest,left,right``** -- The ``right`` operand is subtracted from the ``left`` operand and the result is placed in the ``dest`` operand. AKA ``dest=left-right``.
 
-### INDEX
-Is always a signed integer. Indexes are always used as if it is an index into an array of 64 bit entities, but the types of those entities is never checked. Note that the assembler will replace the name of a label or buffer with the correct index.
+#### Example of stack manipulation
+```
+    // put some stuff on the stack
+    mov  r30,0      // cannot push a literal directly, need to use mov to get it into a register
+    push r30        // push 0 on the stack, sp++
+    push r10        // push what is in R10, sp++
+    mov  r30,sp     // put the actual value of SP into R30.
+    sub  r30,r31,2  // change the value to point back to where it was when the 0 was pushed
+    mov  sp,r30     // put the new value back into the SP
+    add  sp,r12,10  // add 10 to the value of R12 and then save the result on the stack at the current SP
+```
 
-* ``REG``
-* ``0`` -- Zero is always taken to be an INDEX
-* ``0x123``
-* ``-12``
-* ``1234``
-    * Index arithmetic is supported.
-        * ``REG+123``
-        * ``123-REG``
+#### Directives
 
-### NUM
-Is always a double precision floating point number.
+A directive is a word that controls the operation of the assembler, rather than directly produce output. 
 
-* ``0.0`` -- Floating point "zero"
-* ``1.0``
-* ``0.1``
-* ``0.123e-12``
+* **``DATA``** -- This directive causes one or more memory store items to be created. 
 
-### MODE1
-Can be a register, a dereferenced address, or a literal index or number.
+#### Instructions
 
-* ``REG``
-* ``REG[INDEX]``
+* **``MOVx``** -- This instruction facilitates moving literal data into the system. This data can be literal or from the data store. This is the only instruction that takes arguments other than a register. See this example:
 
-### MODE2
-Can be a register or a dereferenced address. It cannot be a literal.
+```
+    mov r0,r1       // The value of R1 is copied to R0
+    mov r0,0x123    // The literal value is copied to R0. The literal value is inline to the instruction stream
+    mov r0,r1[]     // the contents of R1 is taken to be a data store index and the value at that index is copied to R0.
+    mov r0,r1[0]    // same as the above. Note that only literal values and registers are allowed in the [].
+    mov r0,some_name    // The name is taken to be a data store index and is translated to the form in the next line.
+                    // If some_name is an instruction label then a syntax error.
+    mov r0,[123]    // copy the value given by the 123'rd data index into R0.
+                    // Negative value is a syntax error. A simple constant expression is allowed.
+    mov r0,r1[123]  // The value in R1 is an index into the data store and the literal is added to the index to create a new index.
+    mov r0,r1[r2]   // The value in R1 is an index into the data store and the contents of R2 is added to the index to create a new index.
+    mov r0,sp       // The value of the stack pointer is copied to R0
+    mov r0,sp[]     // The value of the top of the stack is copied to R0
+    mov r0,sp[-1]   // The value at the top of the stack - 1 is copied to R0
+    mov r0,r1[-1]   // The value at the location given by register R1 - 1 is copied to R0.
 
-* ``REG``
-* ``REG[INDEX]``
-* ``INDEX``
-* ``NUM``
+```
+    * Values for ``x``
+        * **``MOV``**   // Two registers
+        * **``MOVI``**  // Register and an immediate value inline to the instruction stream.
+        * **``MOVN``**  // Index is literal inline and refers to the data store.
+        * **``MOVR``**  // Two registers where the second register has an index.
 
-### MODE3
-Used as arguments to the math functions.
+* **``PUSH/POP``** -- These instructions indirectly use the stack pointer to move data into the stack or free stack space.
+    * **``PUSH R12``** --  Push the value that is in R12 on the stack.
+    * **``POP R13``** -- Pop the top of the stack into R13.
 
-* ``REG``
-* ``REG[INDEX]``
-* ``NUM``
+* **``ADD/SUB/MUL/DIV/MOD``** -- Arithmetic instructions. Note that divide by zero results in a VM abort.
+    * **``ADD R1,R2,R3``** -- Add the value in R2 and R3 and place the result in R1.
 
-### MODE4
-Used as arguments to the flow instructions.
+* **``CALLx/JMPx/RETx``** -- Flow control instructions can be unconditional or conditional.
+    * Values for ``x``
+        * **``T``** -- execute the instruction if the ``true-flag`` is SET.
+        * **``F``** -- execute the instruction if the ``true-flag`` is CLEAR.
+    * Examples
+        * **``CALL R1``** -- Unconditionally call where R1 has the index into the instruction store.
+        * **``CALL 1234``** -- Unconditionally call the location given by the inlined literal.
+        * **``CALLT R1``** -- Call the index in R1 if the ``true-flag`` is set.
+        * **``JMPF R1``** -- Jump to the index in R1 if the ``true-flag`` is clear.
+        * **``RET R1``** -- Return from a call but first pop from the stack the value that is held in R1. If R1 has 2, the pop two value from the stack before returning.
+        * **``RETT 5``** -- If the ``true-flag`` is set then pop 5 stack items into nothing and return from a call.
 
-* ``REG``
-* ``REG[INDEX]``
-* ``INDEX``
+* **``LT/GT/LTE/GTE/EQ/NEQ``** -- Comparison instructions set the ``true-flag``, according to the comparison made.
+    * **``LT R1,R2``** -- Set the ``true-flag`` if the value in R1 is less-than the value in R2.
+    * **``NEQ R1,R2``** -- Set the ``true-flag`` if the value in R1 is not the same as the value in R2.
+    
+* **``SETF/CLRF``** -- Unconditionally set or clear the ``true-flag``. This is the only other way to control the ``true-flag`` besides the comparison instructions.=.
+    * **``SETF``** -- Set the ``true-flag``.
 
-## VM Instructions
+* **``EXIT``** -- Exit the VM normally with all of the post-operation procedures intact.
 
-* **``MOVE MODE2,MODE1``** -- Copy the first operand to to the second operand.
+* **``ABORT``** -- Terminate the VM and display the exception information.
 
-* **``PUSH MODE2``** -- Push the value to the top of the stack and increment the stack pointer.
+* **``NOP``** -- No operation. This is used to pad code to do things like align it to a page.
 
-* **``POP``** -- Pop one or more items off of the stack.
-    * **``POP``** -- Pop a single item off of the stack into nothing and decrement the stack register.
-    * **``POP REG``** -- Copy the value at the top of the stack to the operand and decrement the stack register.
-    * **``POP INDEX``** -- Pop the literal INDEX number items off of the stack into nothing. Used to free locals allocated in a code block. If INDEX is 0 then this is the same as a NOP.
-
-* **``COPY MODE3,MODE1,MODE1``** -- The first operand is the number of items to copy. The second operand is the source pointer that points to a buffer of 64 bit memory slots. The third operand is the destination buffer. The data is copied by the number of memory slots given by the first operand. As the copy happens the number of items is decremented to zero and the indexes of the source and destination buffers is incremented. Note that if there is an index given on the source of the destination, it is only used to access the memory slot the first time and whatever is there needs to be a pointer. No checking is done to verify that the operands have a valid value.
-
-* **``ADD/SUB/MUL/DIV/MOD``** -- Arithmetic operations.
-    * **``ADD MODE3,MODE3,MODE1``** -- Perform the operation on the two operands and place the result in the last argument.
-
-* **``CALL INDEX``** -- Unconditionally call the literal LABEL. Push the return value on the stack and then set the instruction pointer to the address given.
-
-* **``JMP INDEX``** -- Unconditionally jump to the literal LABEL.
-
-* **``RET``** -- Unconditionally return from a function call.
-    * **``RET INDEX``** -- First POP the literal INDEX number of values into nothing and then POP the top of stack into the instruction pointer causing an unconditional JMP. Note that the RET instruction pops the return address every time, so the number that is given by the literal INDEX does not include that. The number will be equal to the number of function parameters. (it's arity)
-    * **``RET``** -- POP the top of the stack directly into the instruction pointer without accounting for any arity number.
-
-* **``LT MODE2,MODE2``** -- If the left operand is LESS THAN the right operand, then set the TRUE flag. Else clear it.
-
-* **``GT MODE2,MODE2``** -- If the left operand is GREATER THAN the right operand then set the TRUE flag. Else clear it.
-
-* **``LTE MODE2,MODE2``** -- If the left operand is LESS THAN the right operand OR if they are EQUAL then set the TRUE flag. Otherwise, clear it.
-
-* **``GTE MODE2,MODE2``** -- If the left operand is GREATER THAN the right operand OR if they are EQUAL then set the TRUE flag. Otherwise, clear it.
-
-* **``EQ MODE2,MODE2``** -- If the left operand is EQUAL TO the right operand then set the TRUE flag. Otherwise, clear it.
-
-* **``NEQ MODE2,MODE2``** -- If the left operand is NOT EQUAL TO the right operand then set the TRUE flag. Otherwise, clear it.
-
-* **``SETF``** -- Set the TRUE flag unconditionally.
-
-* **``CLRF``** -- Clear the TRUE flag unconditionally.
-
-* **``CALLT/CALLF``** -- Conditionally call based on the TRUE flag.
-    * **``CALLT INDEX``** -- Call the literal LABEL given by the index if the TRUE flag is set.
-
-* **``JMPT/JMPF``** -- Conditionally jump based on the TRUE flag.
-    * **``JMPF INDEX``** -- Jump to the literal label if the TRUE flag is clear.
-
-* **``RETT/RETF``** -- Conditionally return from a function call.
-    * **``RETT INDEX``** -- If the TRUE flag is set, first POP the INDEX number of values into nothing and then POP the top of stack into the instruction pointer causing an unconditional JMP.
-    * **``RETF``** -- If the TRUE flag is clear then POP the top of the stack directly into the instruction pointer without accounting for any arity number.
-
-* **``EXIT``** -- Return to the operating system.
-    * **``EXIT INDEX``** -- With a literal exit code.
-    * **``EXIT``** -- With exit code 0.
-* **``NOP``** -- No operation. This takes up space and provides padding where it is needed.
-
-## VM Internal Functions
-These are functions that can be accessed by the VM but are executed in native code. These have syntax similar to instructions for efficiency. They are mostly functions from the standard C library.
-
-* **``PRINT``** -- Print a string from a format to the stdout of the host.
-    * **``PRI REG``** Where the register is printed as an unsigned long int.
-    * **``PRN REG``** Where the register is printed as a floating point number.
-    * **``PRS REG``** Where the register is a pointer to a simple zero-terminated string.
-    * **``PRF INDEX,REG,REG``** The literal index is the number of arguments to ``printf()`` including the format. The first REG is a zero-terminated string for the format. The second REG is a pointer to a buffer that holds INDEX-1 arguments, each in one memory slot.
-
-* **``INP REG``** -- Input a string from std in and place a pointer to it in the register. This assumes that the buffer was allocated by the ALLOC function. Implemented but ``fgets()``.
-
-* **``OPENR REG,REG``** -- Open a file as read-only where the name is a zero-terminated string in the first REG and the pointer to the file is placed in the second REG. If the file cannot be opened then a VM exception is generated.
-
-* **``OPENW REG,REG``** -- Open a file as read-write where the name is a zero-terminated string in the first REG and the pointer to the file is placed in the second REG. If the file cannot be opened then a VM exception is generated.
-
-* **``CLOSE REG``** -- Close a file that was previously open. Generate a VM exception if the file handle is invalid.
-
-* **``READ REG,REG,INDEX``** -- Read from a file who's handle is in the first REG, the buffer is in the second REG, and the literal INDEX is the number of BYTES to read.
-
-* **``WRITE REG,REG,INDEX``** -- Write to a file who's handle is in the first REG, the buffer is in the second REG, and the literal INDEX is the number of BYTES to write.
-
-* **``ALLOC REG,INDEX``** -- Allocate a memory buffer. Returns the pointer into the REG and the size is given by the INDEX. The returned buffer is "zeroed" out. Alloc is implemented with the system calloc() function and no heap management is performed by the VM.
-
-* **``FREE REG``** -- Free a buffer that was previously allocated by ALLOC. The REG has the pointer that was allocated by the ALLOC function. If not, the runtime will throw an exception.
-
-* **``SIN/COS/TAN/ASIN/ACOS/ATAN/SINH/COSH/TANH/EXP/LOG/LOG10/LOG2/SQRT/CBRT/CEIL/FLOOR/ROUND/ABS``** -- Math operations have the same functionality as the C counterparts.
-
-    * **``SIN MODE3,MODE1``** -- Perform the operation on the NUMBER operand and place the result in the last argument.
-
-    * **``POW MODE3,MODE3,MODE1``** -- Perform the pow() function and put the result in the lats argument.
-
-* **``DUMP``** -- Dumps the complete state of the VM. Used for debugging.
-
-## Assembler Layout
-The assembler is very simple and free-form. It implements a simple symbol table but it does very little in the way of semantics checking. Note that directives and instructions are not case-sensitive.
-
-* **Comments** -- C++ style line and block comments are supported.
-
-* **Code Blocks** -- A code block is surrounded by **``{}``** characters. There is no restriction on nesting. The purpose of blocks syntactically is to let the assembler know to switch the storage mode. Instructions that appear outside of a code block create a syntax error, but anonymous code blocks are allowed.
-
-* **Symbols** -- Assembler symbols follow the same general rules that C does. There is no difference in form between symbols that define data or that define labels in the code. All symbols defined in a global scope must be globally unique and must have a unique definition. Symbols defined in a code block only need to be unique to that code block. Symbols must be defined before they are referenced.
-    * Here is a regular expression for a symbol: **``[a-zA-Z_][0-9a-zA-Z_]*``**.
-
-* **Index Literals** -- An index literal is the same as an unsigned long in C. Integer arithmetic are supported.
-    * Regex for index literal: **``(0[Xx][0-9a-fA-F]+)|([1-9][0-9]*)|0``**
-
-* **Number Literals** -- Numbers in the VM are double precision floats.
-    * Regex for numbers: **``(([1-9][0-9]*)|0)?\.[0-9]*([eE][-+]?[0-9]+)?``**
-
-* **``Include Directive``** -- The INCLUDE directive stops processing the current file and begins processing the file names by the directive as if it was the same file as the current one. When the included file runs out, processing is resumed with the original file. Included files may be nested up to 8 levels. Deeper nesting produces a compile error. If the included file is not accessible or if it has errors, then compilation cannot continue.
-    * Example: **``INCLUDE some/file/name.asm``**
-
-* **``FUNC Directive``** -- The FUNC directive introduces a function definition. Code is automatically generated to push the parms on the stack and the stack pointer is set such that more PUSH instructions or local VAR definitions are stored on the stack properly. Functions cannot be nested. Code does not have to appear in a function definition. Code that appears outside of a function is concatenated and placed at the beginning of the stream of instructions. A RET instruction is required for the function to return but the assembler tracks how many variables were created in a code block and pops them to clear the stack when a ``}`` is encountered.
-    * Example syntax: **``FUNC some_name(parm1, parm2, parm3) { */ instructions */ }``**
-
-* **``DATA Directive``** -- The DATA directive performs two different functions based on its context. If it appears outside of a code block then it defines a globally visible initialized storage. If it appears inside a code block, it is implemented as a PUSH instruction and allows the storage to be referenced by name. Local variables are name-scoped to the code block, so they do not need to be globally unique like they do elsewhere. The assembler tracks how many variables were allocated in the code block and uses ``POP INDEX`` to free the stack space when a ``}`` is encountered.
-    * **``DATA some_name``** -- Defines a single 64 bit storage cell that is referenced by the name ``some_name``.
-    * **``DATA another_name,16``** -- Defines 16 64 bit storage cells, referenced by name.
-    * **``DATA good_name {0,0,0}``** -- Defines 3 64 bit storage cells with a value of zero.
-    * **``DATA bad_name,16 {0}``** -- Defines 16 storage cells with the first one only set to zero.
-    * **``DATA a_string {"this is a string"}``** Defines 3 storage cells with the string copied into it. There are 16 characters in the string, which takes up exactly 2 storage cells, but it must be zero terminated so another cell is allocated to hold the terminating zero and wasting 7 bytes of storage. There is no way to discover the size that was allocated at run time.
 
 
 
