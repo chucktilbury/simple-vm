@@ -52,30 +52,28 @@ A directive is a word that controls the operation of the assembler, rather than 
 #### Instructions
 
 * **``MOVx``** -- This instruction facilitates moving literal data into the system. This data can be literal or from the data store. This is the only instruction that takes arguments other than a register. See this example:
-
-```
-    mov r0,r1       // The value of R1 is copied to R0
-    mov r0,0x123    // The literal value is copied to R0. The literal value is inline to the instruction stream
-    mov r0,r1[]     // the contents of R1 is taken to be a data store index and the value at that index is copied to R0.
-    mov r0,r1[0]    // same as the above. Note that only literal values and registers are allowed in the [].
-    mov r0,some_name    // The name is taken to be a data store index and is translated to the form in the next line.
-                    // If some_name is an instruction label then a syntax error.
-    mov r0,[123]    // copy the value given by the 123'rd data index into R0.
-                    // Negative value is a syntax error. A simple constant expression is allowed.
-    mov r0,r1[123]  // The value in R1 is an index into the data store and the literal is added to the index to create a new index.
-    mov r0,r1[r2]   // The value in R1 is an index into the data store and the contents of R2 is added to the index to create a new index.
-    mov r0,sp       // The value of the stack pointer is copied to R0
-    mov r0,sp[]     // The value of the top of the stack is copied to R0
-    mov r0,sp[-1]   // The value at the top of the stack - 1 is copied to R0
-    mov r0,r1[-1]   // The value at the location given by register R1 - 1 is copied to R0.
-
-```
     * Values for ``x``
-        * **``MOV``**   // Two registers
+        * **``MOV``**   // Two registers, right to left.
         * **``MOVI``**  // Register and an immediate value inline to the instruction stream.
         * **``MOVN``**  // Index is literal inline and refers to the data store.
         * **``MOVR``**  // Two registers where the second register has an index.
+```
+    mov r0,r1     // The value of R1 is copied to R0
+    movi r0,0x123 // The literal value is copied to R0. The literal value is inline to the instruction stream
+    movn r0,r1[]  // the contents of R1 is taken to be a data store index and the value at that index is copied to R0.
+    movn r0,r1[0] // same as the above. Note that only literal values and registers are allowed in the [].
+    movi r0,some_name // The name is taken to be a data store index and is translated to the form in the next line.
+                    // If some_name is an instruction label then a syntax error. In the output the index is substituted for the name.
+    movi r0,[123] // copy the value given by the 123'rd data index into R0.
+                  // Negative value is a syntax error. A simple constant expression is allowed.
+    movr r0,r1[123] // The value in R1 is an index into the data store and the literal is added to the index to create a new index.
+    movr r0,r1[r2] // The value in R1 is an index into the data store and the contents of R2 is added to the index to create a new index.
+    mov r0,sp      // The value of the stack pointer is copied to R0
+    movn r0,sp[]   // The value of the top of the stack is copied to R0
+    movn r0,sp[-1] // The value at the top of the stack - 1 is copied to R0
+    movn r0,r1[-1] // The value at the location given by register R1 - 1 is copied to R0.
 
+```
 * **``PUSH/POP``** -- These instructions indirectly use the stack pointer to move data into the stack or free stack space.
     * **``PUSH R12``** --  Push the value that is in R12 on the stack.
     * **``POP R13``** -- Pop the top of the stack into R13.
